@@ -9,9 +9,41 @@ const audioEl = document.getElementById("audio");
 const loadingEl = document.getElementById("loading");
 const errorEl = document.getElementById("error-message");
 
+// ==================== トースト表示 ====================
+let toastTimer = null;
+
+function showModeToast(message) {
+  // 既存トーストがあれば削除
+  let toast = document.getElementById("mode-toast");
+  if (toast) {
+    toast.remove();
+    if (toastTimer) clearTimeout(toastTimer);
+  }
+
+  toast = document.createElement("div");
+  toast.id = "mode-toast";
+  toast.className = "mode-toast";
+  toast.innerHTML = `
+    <span class="mode-toast-icon">🔄</span>
+    <span class="mode-toast-text">${message}</span>
+  `;
+  document.body.appendChild(toast);
+
+  // 次フレームで .show を付けてスライドイン
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => toast.classList.add("show"));
+  });
+
+  // 4秒後にスライドアウトして削除
+  toastTimer = setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => {
+      if (toast.parentNode) toast.remove();
+    }, 400); // トランジション時間と合わせる
+  }, 4000);
+}
+
 // ==================== フォールバック順序の定義 ====================
-// 各モードから「失敗したときに次に試すモード」の順序リスト
-// 末尾まで行ったら API1系（api1-original2 ⇄ api1-original1）をループする
 const FALLBACK_CHAINS = {
   "official":       ["api1-original2", "api1-original1"],
   "api1-original2": ["api1-original1"],
@@ -20,22 +52,14 @@ const FALLBACK_CHAINS = {
   "api2-original2": ["api2-original1", "api1-original2", "api1-original1"],
 };
 
-// API1系ループ（末尾まで行ったあとに交互に試す）
 const API1_LOOP = ["api1-original2", "api1-original1"];
 
-// 現在のモードから始まる「試行順序」を組み立てる
 function buildAttemptOrder(startMode) {
   const chain = FALLBACK_CHAINS[startMode];
+  if (!chain) return [startMode];
 
-  // チェーン未定義（"default", "360" など）→ そのモード単体のみ
-  if (!chain) {
-    return [startMode];
-  }
-
-  // 開始モード + フォールバックチェーン
   const order = [startMode, ...chain];
 
-  // 末尾がAPI1系ループ（交互）で終わっているか判定
   const lastTwo = order.slice(-2);
   const endsWithApi1Loop =
     lastTwo.length === 2 &&
@@ -50,18 +74,29 @@ function buildAttemptOrder(startMode) {
   return order;
 }
 
-// ==================== モードごとのAPIフィルタ設定 ====================
+// ==================== モード名の表示ラベル ====================
+const MODE_LABELS = {
+  "official":       "公式プレイヤー",
+  "api1-original1": "API1・オリジナル1（高画質）",
+  "api1-original2": "API1・オリジナル2（音声込み）",
+  "api2-original1": "API2・オリジナル1（高画質）",
+  "api2-original2": "API2・オリジナル2（音声込み）",
+  "default":        "デフォルト",
+  "360":            "360p",
+};
+
+function modeLabel(m) {
+  return MODE_LABELS[m] || m;
+}
+
+// ==================== APIフィルタ ====================
 const API_FILTERS = {
-  "api1-high": [
-    "/.netlify/functions",
-  ],
+  "api1-high": ["/.netlify/functions"],
 };
 
 function filterApiList(apiList, mode) {
   const patterns = API_FILTERS[mode];
-  if (!patterns || patterns.length === 0) {
-    return apiList;
-  }
+  if (!patterns || patterns.length === 0) return apiList;
   const filtered = apiList.filter(url =>
     patterns.some(pattern => url.includes(pattern))
   );
@@ -72,7 +107,6 @@ function filterApiList(apiList, mode) {
   return filtered;
 }
 
-// ==================== API.jsonからAPIリストを取得 ====================
 async function getApiList() {
   try {
     const res = await fetch('/API.json');
@@ -84,14 +118,11 @@ async function getApiList() {
   }
 }
 
-// ==================== 最速APIで動画情報を取得（レース） ====================
 async function fetchFastestApi(videoId, mode) {
   let apiList = await getApiList();
-
   if (!Array.isArray(apiList) || apiList.length === 0) {
     throw new Error('APIリストが空です');
   }
-
   apiList = filterApiList(apiList, mode);
 
   const requests = apiList.map(baseUrl => {
@@ -115,8 +146,6 @@ async function fetchFastestApi(videoId, mode) {
 }
 
 // ==================== 音声要素の安全な着脱 ====================
-// audioEl を remove() すると、その後 api1-original1 に戻ったときに
-// audioEl が DOM に存在せずエラーになるため、src クリアで対応する
 function detachAudio() {
   if (!audioEl) return;
   try { audioEl.pause(); } catch (e) {}
@@ -127,23 +156,20 @@ function detachAudio() {
 
 function attachAudio(src) {
   if (!audioEl) return;
-  audioEl.style.display = 'none'; // 音声のみなので非表示のまま
+  audioEl.style.display = 'none';
   audioEl.src = src;
 }
 
 // ==================== 単一モードで動画を読み込む ====================
-// 成功したら true、失敗したら例外を投げる（呼び出し側で catch）
 async function tryLoadWithMode(targetMode) {
   let streamData;
 
-  // ── 1. API1系（API.jsonから動的に取得） ──
+  // ── API1系 ──
   if (targetMode === "api1-original1" || targetMode === "api1-original2") {
-    // 既存コードの mode 名 "api1-high"/"api1-prog" に変換
     const apiMode = targetMode === "api1-original1" ? "api1-high" : "api1-prog";
     const data = await fetchFastestApi(videoId, apiMode);
 
     if (targetMode === "api1-original1") {
-      // 高画質：adaptive video + audio を分離
       const videoFormat = data.adaptiveFormats?.find(f =>
         f.type?.includes("video/mp4") && (f.qualityLabel?.includes("720") || f.qualityLabel?.includes("1080"))
       ) || data.adaptiveFormats?.find(f => f.type?.includes("video/mp4"));
@@ -159,7 +185,6 @@ async function tryLoadWithMode(targetMode) {
       attachAudio(audioFormat.url);
       syncVideoAudio();
     } else {
-      // api1-original2：音声込み（progressive）
       const prog = data.formatStreams?.find(f =>
         f.type?.includes("video/mp4") && (f.qualityLabel?.includes("360") || f.itag === 18)
       ) || data.formatStreams?.[0];
@@ -169,7 +194,7 @@ async function tryLoadWithMode(targetMode) {
       detachAudio();
     }
   }
-  // ── 2. API2系（yt-dlp モード） ──
+  // ── API2系 ──
   else if (targetMode === "api2-original1" || targetMode === "api2-original2") {
     const apiEndpoint = targetMode === "api2-original2" ? "/video360" : "/video";
     const res = await fetch(`${apiEndpoint}?id=${videoId}`);
@@ -194,14 +219,11 @@ async function tryLoadWithMode(targetMode) {
       syncVideoAudio();
     }
   }
-  // ── 3. official（YouTube埋め込み） ──
+  // ── official ──
   else if (targetMode === "official") {
-    // このファイル（playwatch.js）はYouTube iframeを扱わないため、
-    // officialは「メタデータ取得の成否」だけ確認して、成功扱いにする。
-    // （実際の公式プレイヤー切り替えは main.js 側の iframe が担当）
     throw new Error("official はこのプレイヤーでは直接再生できません");
   }
-  // ── 4. その他（default / 360 など、従来のyt-dlpモード） ──
+  // ── default / 360 ──
   else {
     const apiEndpoint = targetMode === "360" ? "/video360" : "/video";
     const res = await fetch(`${apiEndpoint}?id=${videoId}`);
@@ -233,10 +255,11 @@ async function loadVideoWithFallback() {
   const order = buildAttemptOrder(mode);
   console.log(`[playwatch] 試行順序:`, order);
 
-  // API1系ループは無限に続くので、安全のため最大試行回数を設定
-  const MAX_ATTEMPTS = order.length + 8; // ループ分の余裕
+  const MAX_ATTEMPTS = order.length + 8;
   let attempts = 0;
   let index = 0;
+  const originalMode = mode;
+  let lastSuccessMode = null;
 
   while (attempts < MAX_ATTEMPTS) {
     const targetMode = order[index];
@@ -246,15 +269,21 @@ async function loadVideoWithFallback() {
     try {
       await tryLoadWithMode(targetMode);
       console.log(`[playwatch] 成功: ${targetMode}`);
+      lastSuccessMode = targetMode;
       if (loadingEl) loadingEl.style.display = "none";
-      return; // 成功したら終了
+
+      // 最初のモードと違うモードで成功した場合のみトースト表示
+      if (targetMode !== originalMode) {
+        showModeToast(
+          `再生方法を「${modeLabel(targetMode)}」に切り替えました`
+        );
+      }
+      return;
     } catch (err) {
       console.warn(`[playwatch] 失敗: ${targetMode} → ${err.message}`);
 
-      // 次へ進む
       index++;
 
-      // 末尾まで行ったらAPI1ループに突入
       if (index >= order.length) {
         const lastTwo = order.slice(-2);
         const inApi1Loop =
@@ -264,7 +293,6 @@ async function loadVideoWithFallback() {
           lastTwo[0] !== lastTwo[1];
 
         if (inApi1Loop) {
-          // 最後に試したAPI1の「もう一方」から再開
           const lastTried = order[order.length - 1];
           const otherApi1 = API1_LOOP.find(m => m !== lastTried) || API1_LOOP[0];
           order.push(otherApi1);
@@ -275,7 +303,6 @@ async function loadVideoWithFallback() {
     }
   }
 
-  // 最大試行回数に達した
   showError(
     `動画の読み込みに失敗しました<br>` +
     `${attempts}回試行しましたが再生できませんでした<br><br>` +
