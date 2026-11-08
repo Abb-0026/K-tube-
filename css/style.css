@@ -1,13 +1,14 @@
- *{box-sizing:border-box}
-  html,body{height:0%;margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Hiragino Kaku Gothic ProN',Meiryo,sans-serif;background:#fff;color:#111}
-  a{color:inherit;text-decoration:none}
-  img{max-width:100%;display:block}
+*{box-sizing:border-box}
+html,body{height:0%;margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Hiragino Kaku Gothic ProN',Meiryo,sans-serif;background:#fff;color:#111}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+
 header {
-  position: fixed;               /* ← sticky → fixed に変更（完全に固定） */
+  position: fixed;
   top: 0;
   left: 0;
-  right: 0;                      /* 左右いっぱいに広げる */
-  z-index: 1000;                 /* サイドバーより上に来るように高く */
+  right: 0;
+  z-index: 1000;
   background: #fff;
   border-bottom: 1px solid #eee;
   display: flex;
@@ -15,27 +16,22 @@ header {
   padding: 8px 16px;
   gap: 12px;
   height: 64px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1); /* 影を少し加えて浮いてる感を強調（任意） */
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 
-/* ヘッダーが固定になった分、bodyやメインに上余白を追加 */
 body {
-  padding-top: 64px;             /* ← headerの高さ分だけ下にずらす */
+  padding-top: 64px;
 }
 
-/* サイドバーのtopをheaderの下に調整（すでにtop:64px; ならOK） */
-.sidebar-fixed {
-  top: 64px;                     /* 変わらず */
-}
-  .logo{display:flex;align-items:center;gap:8px;cursor:pointer}
-  .logo .icon{width:36px;height:36px;border-radius:6px;background:#ff0000;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
-  .search{flex:1;display:flex;justify-content:center}
-  .search input{width:100%;max-width:720px;padding:10px 14px;border-radius:20px;border:1px solid #ddd;outline:none}
-  .actions{display:flex;gap:12px;align-items:center}
-  main{display:flex;gap:20px;padding:16px;align-items:flex-start}
-  .content{flex:1}
-  .video-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-  .card{cursor:pointer}
+.logo{display:flex;align-items:center;gap:8px;cursor:pointer}
+.logo .icon{width:36px;height:36px;border-radius:6px;background:#ff0000;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+.search{flex:1;display:flex;justify-content:center}
+.search input{width:100%;max-width:720px;padding:10px 14px;border-radius:20px;border:1px solid #ddd;outline:none}
+.actions{display:flex;gap:12px;align-items:center}
+main{display:flex;gap:20px;padding:16px;align-items:flex-start}
+.content{flex:1}
+.video-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.card{cursor:pointer}
 .thumb{
   position:relative;
   border-radius:6px;
@@ -50,29 +46,29 @@ body {
   object-fit:cover;
   display:block;
 }
-  .meta{display:flex;gap:12px;margin-top:8px}
-  .channel-thumb{width:36px;height:36px;border-radius:50%;flex:0 0 36px;background:#ddd;overflow:hidden}
-  .meta .info{flex:1}
-  .meta .info .title{font-weight:600;line-height:1.2;margin-bottom:6px}
-  .meta .info .sub{color:#606060;font-size:13px}
-  .watch-container{display:flex;gap:20px}
-  .main-col{flex:0 0 60%}
-  .side-col{flex:0 0 40%}
-  .player-box{background:#000;aspect-ratio:16/9;border-radius:6px;overflow:hidden}
-  .player-meta{margin-top:12px}
-  .player-meta h1{font-size:18px;margin:0 0 8px 0}
-  .stats{color:#606060;font-size:13px;margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap}
-  .channel-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid #eee;border-bottom:1px solid #eee;margin-top:12px}
-  .channel-row img{width:48px;height:48px;border-radius:50%;overflow:hidden}
-  .channel-row .ch-info{flex:1}
-  .btn-sub{background:#cc0000;color:#fff;padding:8px 12px;border-radius:16px;font-weight:700;cursor:pointer}
-  .comments{margin-top:12px}
-  .comment{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #f0f0f0}
-  .comment img{width:36px;height:36px;border-radius:50%}
-  .comment .c-body{flex:1}
-  .comment .c-body .name{font-weight:700;font-size:13px}
-  .comment .c-body .text{color:#333;margin-top:6px}
-  .related-item{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #f5f5f5;cursor:pointer}
+.meta{display:flex;gap:12px;margin-top:8px}
+.channel-thumb{width:36px;height:36px;border-radius:50%;flex:0 0 36px;background:#ddd;overflow:hidden}
+.meta .info{flex:1}
+.meta .info .title{font-weight:600;line-height:1.2;margin-bottom:6px}
+.meta .info .sub{color:#606060;font-size:13px}
+.watch-container{display:flex;gap:20px}
+.main-col{flex:0 0 60%}
+.side-col{flex:0 0 40%}
+.player-box{background:#000;aspect-ratio:16/9;border-radius:6px;overflow:hidden}
+.player-meta{margin-top:12px}
+.player-meta h1{font-size:18px;margin:0 0 8px 0}
+.stats{color:#606060;font-size:13px;margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap}
+.channel-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid #eee;border-bottom:1px solid #eee;margin-top:12px}
+.channel-row img{width:48px;height:48px;border-radius:50%;overflow:hidden}
+.channel-row .ch-info{flex:1}
+.btn-sub{background:#cc0000;color:#fff;padding:8px 12px;border-radius:16px;font-weight:700;cursor:pointer}
+.comments{margin-top:12px}
+.comment{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #f0f0f0}
+.comment img{width:36px;height:36px;border-radius:50%}
+.comment .c-body{flex:1}
+.comment .c-body .name{font-weight:700;font-size:13px}
+.comment .c-body .text{color:#333;margin-top:6px}
+.related-item{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #f5f5f5;cursor:pointer}
 .related-thumb{
   position:relative;
   width:168px;
@@ -103,17 +99,17 @@ body {
   }
   .search input{max-width:420px}
 }
-  .watch-container { display: flex; gap: 20px; height: calc(100vh - 64px - 32px); }
-  .main-col { flex: 0 0 60%; display: flex; flex-direction: column; overflow-y: auto; padding-right: 4px; }
-  .side-col { flex: 0 0 40%; display: flex; flex-direction: column; overflow-y: auto; padding-left: 4px; }
-  .player-box { flex: 0 0 auto; }
-  .comments { flex: 1 1 auto; overflow-y: auto; }
+.watch-container { display: flex; gap: 20px; height: calc(100vh - 64px - 32px); }
+.main-col { flex: 0 0 60%; display: flex; flex-direction: column; overflow-y: auto; padding-right: 4px; }
+.side-col { flex: 0 0 40%; display: flex; flex-direction: column; overflow-y: auto; padding-left: 4px; }
+.player-box { flex: 0 0 auto; }
+.comments { flex: 1 1 auto; overflow-y: auto; }
 .btn-sub.disabled {
   opacity: 0.4;
   pointer-events: none;
 }
 
- /* メニューアイコン（hamburger） */
+/* メニューアイコン（hamburger） */
 .menu-btn {
   width: 40px;
   height: 40px;
@@ -133,110 +129,48 @@ body {
   fill: #0f0f0f;
 }
 
-/* サイドメニュー */
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: -280px; /* 隠す */
-  width: 280px;
-  height: 100%;
-  background: white;
-  z-index: 1000;
-  box-shadow: 2px 0 8px rgba(0,0,0,0.2);
-  transition: left 0.3s ease;
-  overflow-y: auto;
-}
-.sidebar.open {
-  left: 0;
-}
-
-/* オーバーレイ（外を押すと閉じる） */
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  z-index: 999;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s;
-}
-.overlay.open {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* メニューアイテム */
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 12px 24px;
-  font-size: 14px;
-  color: #0f0f0f;
-  cursor: pointer;
-}
-.menu-item:hover {
-  background: #f2f2f2;
-}
-.menu-item svg {
-  width: 24px;
-  height: 24px;
-  fill: #606060;
-}
-.menu-item.active svg {
-  fill: #065fd4; /* YouTubeの青 */
-}
-
-/* 固定左サイドバー（幅小さめ） */
+/* =============================================
+   固定左サイドバー（Vercel版と同じ挙動に統一）
+   ============================================= */
 .sidebar-fixed {
   position: fixed;
   top: 64px;
   left: 0;
-  width: 72px;                   /* ここがバーの幅 */
-  height: calc(100vh - 64px);
+  bottom: 0;
+  width: 72px;
   background: #fff;
-  border-right: 1px solid #ddd;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+  z-index: 1000;
+  transform: translateX(0);
+  transition: transform 0.3s ease, width 0.3s ease;
   overflow-y: auto;
-  z-index: 30;
-  transition: width 0.3s ease;
 }
 
-/* ホバーで広げる（任意） */
+/* 非表示時 */
+.sidebar-fixed.hidden {
+  transform: translateX(-100%);
+}
+
+/* ホバーでぬるっと240pxに */
 .sidebar-fixed:hover {
   width: 240px;
 }
 
-/* 固定左サイドバー（幅小さめ） */
-.sidebar-fixed {
-  position: fixed;
-  top: 64px;
-  left: 0;
-  width: 72px;                   /* バーの幅（ここを変えてもOK） */
-  height: calc(100vh - 64px);
-  background: #fff;
-  border-right: 1px solid #ddd;
-  overflow-y: auto;
-  z-index: 30;
+/* メインコンテンツ（JSのインラインstyleと衝突しないよう !important なし） */
+.content-main {
+  margin-left: 72px;
+  transition: margin-left 0.3s ease;
 }
 
-/* メインコンテンツを完全にバーの幅に合わせる（隙間防止） */
-main.content-main {
-  margin-left: 72px !important;  /* バーの幅と完全に一致させる */
-  width: calc(100% - 72px) !important;  /* 右端まで広げる */
-  padding: 16px;                 /* 元のpaddingはそのまま */
-  min-height: calc(100vh - 64px);
-  box-sizing: border-box;
+/* サイドバー非表示のときメインコンテンツのマージン0 */
+.sidebar-fixed.hidden ~ .content-main {
+  margin-left: 0;
 }
 
-/* モバイル時はフル幅に戻す */
-@media (max-width: 900px) {
-  .sidebar-fixed {
-    display: none;               /* 完全に非表示に（ハンバーガーだけ残す） */
-  }
-  main.content-main {
-    margin-left: 0 !important;
-    width: 100% !important;
-  }
+/* ダークモード */
+body.dark-mode .sidebar-fixed {
+  background: #1e1e1e;
+  color: #eee;
 }
 
 /* メニューアイテム（アイコン + 下に文字） */
@@ -260,7 +194,7 @@ main.content-main {
 }
 
 .sidebar-item.active {
-  background: #fee2e2; /* 薄い赤（YouTube風） */
+  background: #fee2e2;
   color: #cc0000;
 }
 
@@ -272,48 +206,41 @@ main.content-main {
 }
 
 .sidebar-item.active svg {
-  fill: #cc0000; /* YouTube赤 */
+  fill: #cc0000;
 }
 
-/* メインコンテンツを右にずらす（サイドバー分） */
-main.content-main {
-  margin-left: 240px; /* サイドバー幅 */
-  transition: margin-left 0.3s;
-}
-
+/* モバイル時は固定サイドバーを非表示に */
 @media (max-width: 900px) {
-  main.content-main {
-    margin-left: 0;
+  .sidebar-fixed {
+    display: none;
   }
-}
-
-/* 再生画面（watchページ）では左サイドバーを非表示にする */
-body.watch-page .sidebar-fixed {
-  display: none;
-}
-
-/* メインコンテンツもフル幅に戻す（左マージンなし） */
-body.watch-page main.content-main {
-  margin-left: 0 !important;
-  width: 100% !important;
+  .content-main {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
 }
 
 /* ゲームカードもホームと同じスタイルを流用 */
 #gameGrid .card .thumb img {
-  aspect-ratio: 16/9;          /* 動画と同じ比率で統一 */
+  aspect-ratio: 16/9;
   object-fit: cover;
 }
 
 /* ツール/ゲームのプレイ画面をフル領域に */
 .play-fullscreen {
   position: fixed;
-  top: 64px;                     /* headerの高さ分 */
-  left: 72px;                    /* 左サイドバーの幅分 */
+  top: 64px;
+  left: 72px;
   right: 0;
   bottom: 0;
-  z-index: 20;                   /* headerより下だけどコンテンツの上 */
-  background: #000;              /* 黒背景で没入感 */
+  z-index: 20;
+  background: #000;
   overflow: hidden;
+}
+
+/* サイドバー非表示時はプレイ画面を左端まで */
+body.sidebar-hidden .play-fullscreen {
+  left: 0;
 }
 
 /* iframeを完全にフィット */
@@ -326,11 +253,11 @@ body.watch-page main.content-main {
 /* モバイル対応（左バー非表示時） */
 @media (max-width: 900px) {
   .play-fullscreen {
-    left: 0;                     /* モバイルでは左端まで */
+    left: 0;
   }
 }
 
- body.dark-mode {
+body.dark-mode {
   background: #0f0f0f;
   color: #e0e0e0;
 }
@@ -338,11 +265,9 @@ body.dark-mode header {
   background: #1e1e1e;
   border-bottom: 1px solid #333;
 }
-body.dark-mode .sidebar,
 body.dark-mode .sidebar-fixed {
   background: #1e1e1e;
 }
-body.dark-mode .menu-item:hover,
 body.dark-mode .sidebar-item:hover {
   background: #333;
 }
@@ -353,9 +278,8 @@ body.dark-mode .video-grid,
 body.dark-mode .watch-container {
   color: #e0e0e0;
 }
-/* 必要に応じて他の要素も追加 */
 
- .setting-group {
+.setting-group {
   margin-bottom: 32px;
   padding: 20px;
   background: #f8f9fa;
@@ -391,4 +315,3 @@ body.dark-mode .watch-container {
 .danger-btn:hover {
   background: #c82333;
 }
- 
