@@ -76,7 +76,7 @@ video, audio {
 .mode-toast-icon {
   font-size: 18px;
   line-height: 1;
-  animation: mode-toast-spin 1s linear infinite;
+
 }
 
 @keyframes mode-toast-spin {
