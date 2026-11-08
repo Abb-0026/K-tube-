@@ -1,37 +1,37 @@
-      const PIPED_API_BASE = '/piped';
-      const INVIDIOUS_API_BASE = '/invidious'
+const PIPED_API_BASE = '/piped';
+const INVIDIOUS_API_BASE = '/invidious'
 
-      const MAX_RESULTS = 12;
-      const el = id => document.getElementById(id);
-      const app = el('app');
-      const searchInput = el('searchInput');
-      const homeBtn = el('homeBtn');
+const MAX_RESULTS = 12;
+const el = id => document.getElementById(id);
+const app = el('app');
+const searchInput = el('searchInput');
+const homeBtn = el('homeBtn');
 
-      let channelThumbCache = {};
-      let homeLoading = false;
-      let observerMap = new Map();
+let channelThumbCache = {};
+let homeLoading = false;
+let observerMap = new Map();
 
 
-      let commentsPageToken = {};
+let commentsPageToken = {};
 
-   function fmtNum(n) {
+function fmtNum(n) {
   if (n == null || isNaN(n)) return '0';
   n = Number(n);
 
   return n.toLocaleString('en-US');
 }
 
-      function timeAgo(dateStr){
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return dateStr;
-        const s = Math.floor((Date.now()-d.getTime())/1000);
-        if(s<60) return s + '秒前';
-        if(s<3600) return Math.floor(s/60)+'分前';
-        if(s<86400) return Math.floor(s/3600)+'時間前';
-        if(s<2592000) return Math.floor(s/86400)+'日前';
-        if(s<31536000) return Math.floor(s/2592000)+'ヶ月前';
-        return Math.floor(s/31536000)+'年以上前';
-      }
+function timeAgo(dateStr){
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const s = Math.floor((Date.now()-d.getTime())/1000);
+  if(s<60) return s + '秒前';
+  if(s<3600) return Math.floor(s/60)+'分前';
+  if(s<86400) return Math.floor(s/3600)+'時間前';
+  if(s<2592000) return Math.floor(s/86400)+'日前';
+  if(s<31536000) return Math.floor(s/2592000)+'ヶ月前';
+  return Math.floor(s/31536000)+'年以上前';
+}
 
 // ─────────────────────────────────────────────
 // 生fetch（タイムアウト付き）
@@ -94,7 +94,7 @@ if (endpoint.startsWith('/channel/')) {
   return {
     name: data.author || '',
     description: data.description || '',
-    avatarUrl: toYt3Avatar(data.authorThumbnails?.slice(-1)[0]?.url || '', 176), // ← 変換（大サイズ）
+    avatarUrl: toYt3Avatar(data.authorThumbnails?.slice(-1)[0]?.url || '', 176),
     subscriberCount: data.subCount || 0,
     relatedStreams: vids,
     videos: vids
@@ -181,34 +181,26 @@ async function pipedFetch(endpoint, params = {}) {
 function toYt3Avatar(url, size = 88) {
   if (!url || typeof url !== 'string') return '';
 
-  // data: や 空文字 は除外
   if (url.startsWith('data:')) return '';
 
   try {
-    // すでに yt3.ggpht.com の場合はサイズだけ揃えて返す
     if (url.includes('yt3.ggpht.com')) {
       return url.replace(/=s\d+[^=]*$/, `=s${size}-c-k-c0x00ffffff-no-rj`);
     }
 
-    // URL からパス部分（/ytc/... または /channel/... など）を抽出
     const u = new URL(url, location.origin);
 
-    // パスに /ytc/ が含まれていれば、その後ろを丸ごと使う
     const ytcIndex = u.pathname.indexOf('/ytc/');
     if (ytcIndex !== -1) {
-      const ytcPath = u.pathname.slice(ytcIndex); // /ytc/AIdro_...
-      // クエリがあれば保持（サイズ指定など）
+      const ytcPath = u.pathname.slice(ytcIndex);
       const query = u.search || '';
       return `https://yt3.ggpht.com${ytcPath}${query}`;
     }
 
-    // ggpht.com 系の別パス（/channel/UCxxx など）は
-    // yt3.ggpht.com にホストだけ差し替え
     if (url.includes('ggpht.com') || url.includes('googleusercontent.com')) {
       return `https://yt3.ggpht.com${u.pathname}${u.search}`;
     }
 
-    // それ以外（i.ytimg.com など）は変換不可 → 空を返す
     return '';
   } catch (e) {
     console.warn('toYt3Avatar failed:', url, e);
@@ -221,7 +213,7 @@ async function getChannelThumbPiped(channelId) {
   try {
     const data = await pipedFetch(`/channel/${channelId}`);
     const rawThumb = data.avatarUrl || '';
-    const thumb = toYt3Avatar(rawThumb, 88); // ← 変換（小サイズ）
+    const thumb = toYt3Avatar(rawThumb, 88);
     channelThumbCache[channelId] = thumb;
     return thumb;
   } catch (e) {
@@ -230,27 +222,58 @@ async function getChannelThumbPiped(channelId) {
   }
 }
 
-      window.addEventListener('hashchange', renderByHash);
-      homeBtn.addEventListener('click', () => { location.hash = ''; });
-      searchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') performSearch(searchInput.value.trim());
-      });
-      renderByHash();
+window.addEventListener('hashchange', renderByHash);
+homeBtn.addEventListener('click', () => { location.hash = ''; });
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') performSearch(searchInput.value.trim());
+});
+renderByHash();
 
-      function renderByHash() {
-        const h = location.hash.slice(1);
-        if (!h) return renderHome();
-        const [k, v] = h.split('=');
-        if (k === 'watch') return renderWatch(v);
-        if (k === 'channel') return renderChannel(v);
-        if (k === 'search') {
-          searchInput.value = decodeURIComponent(v || '');
-          performSearch(decodeURIComponent(v || ''));
-          return;
-        }
-        renderHome();
-      }
+function renderByHash() {
+  const h = location.hash.slice(1);
 
+  document.body.classList.remove('watch-page');
+
+  if (!h) {
+    renderHome();
+    toggleFixedSidebar(true);
+  } else {
+    const [k, v] = h.split('=');
+    if (k === 'watch') {
+      renderWatch(v);
+      document.body.classList.add('watch-page');
+      toggleFixedSidebar(false);
+    } else if (k === 'channel') {
+      renderChannel(v);
+      toggleFixedSidebar(true);
+    } else if (k === 'search') {
+      searchInput.value = decodeURIComponent(v || '');
+      performSearch(decodeURIComponent(v || ''));
+      toggleFixedSidebar(true);
+    } else if (k === 'games') {
+      renderGames();
+      toggleFixedSidebar(true);
+    } else if (k === 'tools') {
+      renderTools();
+      toggleFixedSidebar(true);
+    } else if (k === 'history') {
+      renderHistory();
+      toggleFixedSidebar(true);
+    } else if (k === 'settings') {
+      renderSettings();
+      toggleFixedSidebar(true);
+    } else if (k === 'about') {
+      renderAbout();
+      toggleFixedSidebar(true);
+    } else if (k === 'contact') {
+      renderContact();
+      toggleFixedSidebar(true);
+    } else {
+      renderHome();
+      toggleFixedSidebar(true);
+    }
+  }
+}
 
 
 function renderHome() {
@@ -515,7 +538,6 @@ async function setupComments(videoId) {
 if (res.comments && res.comments.length > 0) {
   res.comments.forEach(c => {
     const rawThumb = c.thumbnail || '';
-    // yt3.ggpht.com に変換。失敗したら thumb-proxy 経由、それもダメならプレースホルダ
     const proxiedThumb = toYt3Avatar(rawThumb, 40)
       || (rawThumb ? `/thumb-proxy?url=${encodeURIComponent(rawThumb)}` : '')
       || 'https://www.gstatic.com/youtube/img/no_thumbnail_140-vflXmJqzd.png';
@@ -710,16 +732,13 @@ let subscriberCount = metaData.subscriberCount ?? 0;
 // chId があれば /channel/ で必ず上書き取得（ホームと同じ経路）
 if (chId) {
   try {
-    // getChannelThumbPiped はキャッシュも効くので、ホームで取得済みなら即返る
     const thumb = await getChannelThumbPiped(chId);
     if (thumb) {
       chThumb = thumb;
     }
 
-    // 登録者数とチャンネル名も取得
     const channelData = await pipedFetch(`/channel/${chId}`);
     if (channelData) {
-      // チャンネル名が不明な場合のみ上書き
       if (!chName || chName === '不明') {
         chName = channelData.name || chName;
       }
@@ -1186,7 +1205,7 @@ if (relatedList) {
           if (!data || !data.name) throw new Error('チャンネルが見つかりません');
           const title = data.name;
           const desc = data.description || '';
-          const thumb = toYt3Avatar(data.avatarUrl || '', 176); // ← 変換（大サイズ）
+          const thumb = toYt3Avatar(data.avatarUrl || '', 176);
           const subs = data.subscriberCount || 0;
           app.innerHTML = `
             <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
@@ -1306,25 +1325,47 @@ window.addEventListener('load', () => {
     });
 });
 
-  
+// =============================================
+// 固定サイドバー開閉（Vercel版と同じ挙動）
+// =============================================
 const menuBtn = document.getElementById('menuBtn');
-const sidebar = document.getElementById('sidebar');
-const overlay = document.getElementById('overlay');
 
-function toggleMenu() {
-  sidebar.classList.toggle('open');
-  overlay.classList.toggle('open');
+function toggleFixedSidebar(show = null) {
+  const fixedSidebar = document.getElementById('sidebarFixed');
+  const contentMain = document.querySelector('.content-main');
+  if (!fixedSidebar || !contentMain) return;
+
+  if (show === true) {
+    fixedSidebar.classList.remove('hidden');
+  } else if (show === false) {
+    fixedSidebar.classList.add('hidden');
+  } else {
+    fixedSidebar.classList.toggle('hidden');
+  }
+
+  if (fixedSidebar.classList.contains('hidden')) {
+    contentMain.style.setProperty('margin-left', '0', 'important');
+    document.body.classList.add('sidebar-hidden');
+  } else {
+    contentMain.style.setProperty('margin-left', '72px', 'important');
+    document.body.classList.remove('sidebar-hidden');
+  }
 }
 
-menuBtn.addEventListener('click', toggleMenu);
-overlay.addEventListener('click', toggleMenu);
+if (menuBtn) {
+  menuBtn.addEventListener('click', () => toggleFixedSidebar());
+}
 
+window.addEventListener('DOMContentLoaded', () => {
+  toggleFixedSidebar(true);
+});
 
-
-     
+// =============================================
+// サイドバー active 状態更新
+// =============================================
 function updateSidebarActive() {
   const hash = location.hash.slice(1);
-  const items = document.querySelectorAll('.sidebar-item, .menu-item');
+  const items = document.querySelectorAll('.sidebar-item');
 
   items.forEach(item => {
     item.classList.remove('active');
@@ -1365,7 +1406,7 @@ document.querySelectorAll('.sidebar-item').forEach(item => {
   item.addEventListener('click', () => {
     const target = item.dataset.target;
 
-    document.querySelectorAll('.sidebar-item, .menu-item').forEach(i => i.classList.remove('active'));
+    document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
     item.classList.add('active');
 
     if (target === 'home') {
@@ -1384,53 +1425,9 @@ document.querySelectorAll('.sidebar-item').forEach(item => {
       renderSettings();
     }
 
-    if (sidebar.classList.contains('open')) {
-      toggleMenu();
-    }
+    toggleFixedSidebar(false);
   });
 });
-
-
-function renderByHash() {
-  const h = location.hash.slice(1);
-  
-
-  document.body.classList.remove('watch-page');
-  
-  if (!h) {
-    renderHome();
-  } else {
-    const [k, v] = h.split('=');
-    if (k === 'watch') {
-      renderWatch(v);
-      document.body.classList.add('watch-page');  
-    } else if (k === 'channel') {
-      renderChannel(v);
-    } else if (k === 'search') {
-      searchInput.value = decodeURIComponent(v || '');
-      performSearch(decodeURIComponent(v || ''));
-　　} else if (k === 'games') {
-      renderGames();
-    } else if (k === 'tools') {
-      renderTools();
-    } else if (k === 'history') {              
-      renderHistory();
-    } else if (k === 'playgame') {
-      // ……
-    } else if (k === 'playtool') {
-
-    } else if (k === 'settings') {        
-      renderSettings(); 
-    } else if (k === 'about') {          
-      renderAbout();
-    } else if (k === 'contact') {        
-      renderContact();
-     
-    } else {
-      renderHome();
-    }
-  }
-}
 
 
 function renderGames() {
@@ -1521,53 +1518,6 @@ function renderHistory() {
     });
   }
 }    
-
-function renderByHash() {
-  const h = location.hash.slice(1);
-  
- 
-  document.body.classList.remove('watch-page');
-
-  if (!h) {
-    renderHome();
-  } else {
-    const [k, v] = h.split('=');
-    
-    if (k === 'watch') {
-      renderWatch(v);
-      document.body.classList.add('watch-page');
-    } else if (k === 'channel') {
-      renderChannel(v);
-    } else if (k === 'search') {
-      searchInput.value = decodeURIComponent(v || '');
-      performSearch(decodeURIComponent(v || ''));
-    } else if (k === 'games') {
-      renderGames();
-    } else if (k === 'tools') {
-      renderTools();
-    } else if (k === 'history') {
-      renderHistory();
-    } else if (k === 'settings') {
-      renderSettings();
-    } else if (k === 'about') {
-      renderAbout();
-    } else if (k === 'contact') {
-      renderContact();
-} else if (k === 'playgame') {
-  const url = decodeURIComponent(v || '');
-  const game = { embedUrl: url, title: "ゲーム" }; 
-  renderGamePlay(game);
-} else if (k === 'playtool') {
-  const url = decodeURIComponent(v || '');
-  const tool = { embedUrl: url, title: "ツール" };
-  renderToolPlay(tool);
-}　else {
-      renderHome();  
-    }
-  }
-  
-  updateSidebarActive();
-}
 
 
 const HISTORY_KEY = 'kTube_watch_history';
@@ -1970,4 +1920,3 @@ function renderContact() {
 
 import('./games.js').then(() => console.log('games.js loaded'));
 import('./tools.js').then(() => console.log('tools.js loaded'));
-     
