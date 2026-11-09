@@ -712,7 +712,7 @@ async function fetchFastestNetlify(videoId) {
 
 
 // =============================================
-// 再生ページ（超高速化版 + googlevideo ブロック検知）
+// 再生ページ（超高速化版）
 // =============================================
 async function renderWatch(videoId) {
   try {
@@ -809,63 +809,9 @@ async function renderWatch(videoId) {
       </div>
     `;
 
-     // ── ② プレイヤー切り替えイベント + モード同期 + googlevideo ブロック検知 ──
+    // ── ② プレイヤー切り替えイベントを即時登録 ──
     const playerSelect = document.getElementById('playerSelect');
     const iframe = document.getElementById('videoIframe');
-    let currentMode = selectedValue;
-    let _errorHandled = false;
-
-    // iframe 内の playwatch.js からのメッセージを一元処理
-    if (window._ktubePlayerMsgHandler) {
-      window.removeEventListener('message', window._ktubePlayerMsgHandler);
-    }
-    window._ktubePlayerMsgHandler = function(e) {
-      if (!e.data || typeof e.data !== 'object') return;
-
-      // ── モード変更通知（playwatch.js 内の自動フォールバック成功） ──
-      if (e.data.type === 'mode-changed') {
-        const newMode = e.data.mode;
-        if (!newMode) return;
-        console.log(`[renderWatch] mode-changed 受信: ${newMode}`);
-        currentMode = newMode;
-        if (playerSelect) playerSelect.value = newMode;
-        _errorHandled = false;
-        return;
-      }
-
-      // ── プレイヤーエラー通知（googlevideo.com ブロック検知） ──
-      if (e.data.type === 'player-error') {
-        if (_errorHandled) return;
-        const errMode = e.data.mode || currentMode;
-        console.warn(`[renderWatch] player-error 受信: reason=${e.data.reason} mode=${errMode}`);
-
-        // api1-original2 なら再試行（ループ）
-        if (errMode === 'api1-original2') {
-          console.log('[renderWatch] api1-original2 を再試行（ループ）');
-          if (iframe) {
-            iframe.src = `/watch.html?id=${videoId}&mode=api1-prog&t=${Date.now()}`;
-          }
-          if (typeof window.showModeToast === 'function') {
-            window.showModeToast('「API1・オリジナル2」で再試行しています');
-          }
-          return;
-        }
-
-        // それ以外 → api1-original2 に切り替え
-        _errorHandled = true;
-        currentMode = 'api1-original2';
-        if (playerSelect) playerSelect.value = 'api1-original2';
-        if (iframe) {
-          iframe.src = `/watch.html?id=${videoId}&mode=api1-prog&t=${Date.now()}`;
-        }
-        if (typeof window.showModeToast === 'function') {
-          window.showModeToast('埋め込みがブロックされたため「API1・オリジナル2」に切り替えました');
-        }
-        return;
-      }
-    };
-    window.addEventListener('message', window._ktubePlayerMsgHandler);
-
     if (playerSelect && iframe) {
       playerSelect.addEventListener('change', () => {
         const val = playerSelect.value;
@@ -878,13 +824,31 @@ async function renderWatch(videoId) {
           case 'api2-original2': newSrc = `/watch.html?id=${videoId}&mode=360`; break;
         }
         iframe.src = newSrc;
-        currentMode = val;
-        _errorHandled = false;
       });
+
+      // ── ここを追加：playwatch.js からの自動切り替え通知を受信 ──
+      const onPlayerModeMessage = (e) => {
+        if (!e.data || e.data.type !== 'ktube-player-mode-changed') return;
+        if (e.data.videoId !== videoId) return; // 別動画のメッセージは無視
+
+        const newMode = e.data.mode;
+        // playerSelect に該当する option があれば選択状態を更新
+        const hasOption = [...playerSelect.options].some(o => o.value === newMode);
+        if (hasOption) {
+          playerSelect.value = newMode;
+          console.log(`[main] playerSelect を ${newMode} に更新`);
+        }
+      };
+
+      // 既存のリスナーがあれば外す（renderWatch が複数回呼ばれる対策）
+      if (window.__ktubePlayerModeHandler) {
+        window.removeEventListener('message', window.__ktubePlayerModeHandler);
+      }
+      window.__ktubePlayerModeHandler = onPlayerModeMessage;
+      window.addEventListener('message', onPlayerModeMessage);
     }
 
-
-   // ── ③ ダウンロードボタンも即時登録 ──
+    // ── ③ ダウンロードボタンも即時登録 ──
     const downloadBtn = document.getElementById('downloadMainBtn');
     if (downloadBtn) {
       downloadBtn.classList.remove('disabled');
@@ -1129,34 +1093,6 @@ async function renderWatch(videoId) {
     `;
   }
 }
-
-// ==================== トースト表示（main.js 用） ====================
-let _mainToastTimer = null;
-function showModeToast(message) {
-  let toast = document.getElementById("mode-toast-main");
-  if (toast) {
-    toast.remove();
-    if (_mainToastTimer) clearTimeout(_mainToastTimer);
-  }
-  toast = document.createElement("div");
-  toast.id = "mode-toast-main";
-  toast.className = "mode-toast";
-  toast.innerHTML = `
-    <span class="mode-toast-icon">🔄</span>
-    <span class="mode-toast-text">${message}</span>
-  `;
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => toast.classList.add("show"));
-  });
-  _mainToastTimer = setTimeout(() => {
-    toast.classList.remove("show");
-    setTimeout(() => {
-      if (toast.parentNode) toast.remove();
-    }, 400);
-  }, 4000);
-}
-window.showModeToast = showModeToast;
 
 function normalizeMetadata(data, source) {
   const ch = data.channel || {};
@@ -1869,7 +1805,7 @@ function renderAbout() {
         </div>
         
         <div style="text-align: center; margin: 60px 0; color: #666; font-size: 15px;">
-          © 2024-2026 K-tube All Rights Reserved.<br>
+          © 2025-2026 K-tube All Rights Reserved.<br>
   
         </div>
         
