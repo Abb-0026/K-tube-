@@ -58,7 +58,6 @@ async function rawFetchJson(url, timeoutMs = 12000) {
 // Invidious → Piped 形式に正規化
 // ─────────────────────────────────────────────
 function normalizeInvidious(endpoint, data) {
-  // ── 検索 / トレンド（配列）
   if (endpoint.startsWith('/trending') || endpoint.startsWith('/search')) {
     const arr = Array.isArray(data) ? data : (data.items || data.videos || []);
     return arr.map(v => {
@@ -78,7 +77,6 @@ function normalizeInvidious(endpoint, data) {
     });
   }
 
-  // ── チャンネル
 if (endpoint.startsWith('/channel/')) {
   const vids = (data.latestVideos || []).map(v => {
       const vid = v.videoId || '';
@@ -103,7 +101,6 @@ if (endpoint.startsWith('/channel/')) {
   };
 }
 
-  // ── コメント
   if (endpoint.startsWith('/comments/')) {
     return {
       comments: (data.comments || []).map(c => ({
@@ -117,7 +114,6 @@ if (endpoint.startsWith('/channel/')) {
     };
   }
 
-  // ── 動画詳細
   if (endpoint.startsWith('/streams/')) {
     const vid = endpoint.split('/').pop();
     return {
@@ -664,15 +660,38 @@ if (res.comments && res.comments.length > 0) {
   }
 }
 
+// =============================================
+// /API.json のキャッシュ（sessionStorage）
+// =============================================
+let _apiListCache = null;
+async function getCachedApiList() {
+  if (_apiListCache) return _apiListCache;
+  try {
+    const cached = sessionStorage.getItem('ktube_api_list');
+    if (cached) {
+      _apiListCache = JSON.parse(cached);
+      return _apiListCache;
+    }
+  } catch (e) {}
+  try {
+    const res = await fetch('/API.json');
+    if (!res.ok) throw new Error('API.json fetch failed');
+    const list = await res.json();
+    _apiListCache = list;
+    try { sessionStorage.setItem('ktube_api_list', JSON.stringify(list)); } catch (e) {}
+    return list;
+  } catch (e) {
+    console.warn('API.json 取得失敗:', e);
+    return ["https://splendid-jelly-e731bd.netlify.app/.netlify/functions"];
+  }
+}
+
 async function fetchFastestNetlify(videoId) {
   try {
-    const apiRes = await fetch('/API.json');
-    const apiList = await apiRes.json();
-
+    const apiList = await getCachedApiList();
     if (!Array.isArray(apiList) || apiList.length === 0) {
       throw new Error('API.json が空です');
     }
-
 
     const requests = apiList.map(base =>
       fetch(`${base}/video?v=${videoId}`)
@@ -685,156 +704,55 @@ async function fetchFastestNetlify(videoId) {
     const fastest = await Promise.any(requests);
     console.log('最速API成功');
     return fastest;
-
   } catch (err) {
     console.warn('全API失敗:', err);
     return null;
   }
-}     
-     
+}
+
+
+// =============================================
+// 再生ページ（超高速化版）
+// =============================================
 async function renderWatch(videoId) {
   try {
     observerMap.forEach(o => o.disconnect());
     observerMap.clear();
-    app.innerHTML = `<div style="padding:40px; text-align:center; color:#606060;">読み込み中...</div>`;
 
-    let metaData = {};
-    let source = "none";
-
-   // ── メタデータ取得
-    const backends = [
-      { name: "K-tube API (race)", custom: () => fetchFastestNetlify(videoId) },
-
-
-    ];
-
-for (const backend of backends) {
-  try {
-    console.log(`Trying metadata backend: ${backend.name}`);
-
-    let data;
-
-    if (backend.custom) {
-      data = await backend.custom();
-    } else {
-      const res = await fetch(backend.url(), {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' }
-      });
-      if (!res.ok) continue;
-      data = await res.json();
-    }
-
-    if (!data || data.error || data.status === "fail") continue;
-
-    metaData = normalizeMetadata(data, backend.name);
-    source = backend.name;
-    console.log(`Metadata obtained from: ${source} (成功)`);
-    break;
-
-  } catch (err) {
-    console.warn(`${backend.name} failed:`, err.message);
-  }
-}
-
-
-    if (!metaData.title) {
-      try {
-        const searchData = await pipedFetch('/search', { q: videoId, filter: 'videos' });
-        const item = (searchData?.items || searchData || []).find(it =>
-          it.url?.includes(videoId) || it.url?.includes(`v=${videoId}`)
-        );
-        if (item) {
-          metaData = {
-            title: item.title || `動画（ID: ${videoId}）`,
-            description: item.shortDescription || '説明文なし',
-            thumbnail: item.thumbnail || '',
-            uploader: item.uploaderName || '不明',
-            viewCount: item.views || 0,
-            uploaded: item.uploaded || '',
-            channelName: item.uploaderName || '',
-            channelId: item.uploaderUrl?.split('/').pop() || '',
-          };
-          source = "Piped Search (minimal)";
-        }
-      } catch (e) {
-        console.warn("最終フォールバック失敗", e);
-      }
-    }
-
-
-    const title = metaData.title || `動画（ID: ${videoId}）`;
-    const views = fmtNum(metaData.viewCount ?? metaData.views ?? 0);
-    const likes = fmtNum(metaData.likeCount ?? 0);
-    let uploaded = '---';
-    if (metaData.published || metaData.uploadDate || metaData.uploaded) {
-      try {
-        uploaded = timeAgo(new Date(metaData.published || metaData.uploadDate || metaData.uploaded).toISOString());
-      } catch {}
-    }
-
-
-    let rawDesc = metaData.description || metaData.shortDescription || '説明文は現在取得できませんでした';
-    rawDesc = rawDesc.trim();
-    rawDesc = rawDesc.replace(/^\s+|\s+$/g, '');
-    rawDesc = rawDesc.replace(/^(?:\r\n|\r|\n|　)+/, '');
-    rawDesc = rawDesc.replace(/\s{2,}/g, ' ');
-    rawDesc = rawDesc.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:#065fd4; text-decoration:underline;">$1</a>');
-    const escapedDesc = rawDesc;
-
-    let chName = metaData.uploader || metaData.author || metaData.channelName || metaData.uploaderName || '不明';
-let chId = metaData.channelId || metaData.authorId || (metaData.uploaderUrl?.split('/').pop() || '');
-
-// 初期値は metaData から（あれば）
-let chThumb = toYt3Avatar(
-  metaData.uploaderAvatar || metaData.avatar || '',
-  88
-);
-
-let subscriberCount = metaData.subscriberCount ?? 0;
-
-// chId があれば /channel/ で必ず上書き取得（ホームと同じ経路）
-if (chId) {
-  try {
-    const thumb = await getChannelThumbPiped(chId);
-    if (thumb) {
-      chThumb = thumb;
-    }
-
-    const channelData = await pipedFetch(`/channel/${chId}`);
-    if (channelData) {
-      if (!chName || chName === '不明') {
-        chName = channelData.name || chName;
-      }
-      if (typeof channelData.subscriberCount === 'number' && channelData.subscriberCount > 0) {
-        subscriberCount = channelData.subscriberCount;
-      } else if (channelData.subscriberCount === -1 || channelData.subscriberCount === null) {
-        subscriberCount = '非公開';
-      }
-    }
-  } catch (err) {
-    console.warn('チャンネル情報取得失敗:', err);
-  }
-}
-
-    const chSubs = typeof subscriberCount === 'number' 
-      ? fmtNum(subscriberCount) 
-      : (subscriberCount === '非公開' ? '非公開' : '---');
-
-    if (metaData.title) {
-      addToHistory(videoId, metaData.title, metaData.thumbnail || '', chName, metaData.uploaderUrl || (chId ? `/channel/${chId}` : ''));
-    }
-
+    // ── ① 骨組みを即描画 ──
     const defaultPlayer = localStorage.getItem('defaultPlayer') || 'api2-original2';
 
-    // HTML描画 
+    let initialSrc = `https://www.youtube.com/embed/${videoId}?rel=0`;
+    let selectedValue = 'official';
+    switch (defaultPlayer) {
+      case 'official':
+        initialSrc = `https://www.youtube.com/embed/${videoId}?rel=0`;
+        selectedValue = 'official';
+        break;
+      case 'api1-original1':
+        initialSrc = `/watch.html?id=${videoId}&mode=api1-high`;
+        selectedValue = 'api1-original1';
+        break;
+      case 'api1-original2':
+        initialSrc = `/watch.html?id=${videoId}&mode=api1-prog`;
+        selectedValue = 'api1-original2';
+        break;
+      case 'api2-original1':
+        initialSrc = `/watch.html?id=${videoId}`;
+        selectedValue = 'api2-original1';
+        break;
+      case 'api2-original2':
+        initialSrc = `/watch.html?id=${videoId}&mode=360`;
+        selectedValue = 'api2-original2';
+        break;
+    }
+
     app.innerHTML = `
       <div class="watch-container">
         <div class="main-col">
-
-<div class="player-box">
+          <div class="player-box">
             <iframe id="videoIframe"
-                    src="https://www.youtube.com/embed/${videoId}"
+                    src="${initialSrc}"
                     frameborder="0"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowfullscreen
@@ -842,60 +760,41 @@ if (chId) {
             </iframe>
           </div>
           <div class="player-meta">
-            <h1>${escapeHtml(title)}</h1>
-            <div class="stats">
-              <div>${views} 回視聴</div>
+            <h1 id="watchTitle">読み込み中...</h1>
+            <div class="stats" id="watchStats">
+              <div id="watchViews">--- 回視聴</div>
               <div>・</div>
-              <div>${uploaded}</div>
-              <div style="margin-left:auto;font-weight:700">${likes} 👍</div>
-    <select id="playerSelect">
-  <option value="official" ${defaultPlayer === 'official' ? 'selected' : ''}>
-    公式プレイヤー（YouTube埋め込み）
-  </option>
-  <option value="api1-original1" ${defaultPlayer === 'api1-original1' ? 'selected' : ''}>
-    API1・オリジナル1（高画質）
-  </option>
-  <option value="api1-original2" ${defaultPlayer === 'api1-original2' ? 'selected' : ''}>
-    API1・オリジナル2（音声込み）
-  </option>
-  <option value="api2-original1" ${defaultPlayer === 'api2-original1' ? 'selected' : ''}>
-    API2・オリジナル1（高画質）
-  </option>
-  <option value="api2-original2" ${defaultPlayer === 'api2-original2' ? 'selected' : ''}>
-    API2・オリジナル2（音声込み）
-  </option>
-</select>
+              <div id="watchUploaded">---</div>
+              <div style="margin-left:auto;font-weight:700" id="watchLikes">--- 👍</div>
+              <select id="playerSelect">
+                <option value="official" ${selectedValue === 'official' ? 'selected' : ''}>公式プレイヤー（YouTube埋め込み）</option>
+                <option value="api1-original1" ${selectedValue === 'api1-original1' ? 'selected' : ''}>API1・オリジナル1（高画質）</option>
+                <option value="api1-original2" ${selectedValue === 'api1-original2' ? 'selected' : ''}>API1・オリジナル2（音声込み）</option>
+                <option value="api2-original1" ${selectedValue === 'api2-original1' ? 'selected' : ''}>API2・オリジナル1（高画質）</option>
+                <option value="api2-original2" ${selectedValue === 'api2-original2' ? 'selected' : ''}>API2・オリジナル2（音声込み）</option>
+              </select>
             </div>
             <div class="channel-row">
-
-            <img src="${chThumb}" alt="" onerror="this.src='https://via.placeholder.com/48?text=Ch'" style="width:48px;height:48px;border-radius:50%;object-fit:cover;">
-            <div class="ch-info">
-              <div style="font-weight:700">
-                <a href="#channel=${chId}" class="watch-ch-link" style="text-decoration:none;color:inherit">
-                  ${escapeHtml(chName)}
-                </a>
+              <img id="watchChThumb" src="" alt="" onerror="this.src='https://via.placeholder.com/48?text=Ch'" style="width:48px;height:48px;border-radius:50%;object-fit:cover;background:#eee;">
+              <div class="ch-info">
+                <div style="font-weight:700">
+                  <a id="watchChLink" href="#" class="watch-ch-link" style="text-decoration:none;color:inherit">---</a>
+                </div>
+                <div style="color:#606060;font-size:13px" id="watchChSubs">--- 人の登録者</div>
               </div>
-              <div style="color:#606060;font-size:13px">${chSubs} 人の登録者</div>  
+              <button class="btn-sub" id="downloadMainBtn">ダウンロード</button>
             </div>
-            <button class="btn-sub" id="downloadMainBtn">ダウンロード</button>
-          </div>
 
-          <div id="descriptionArea" style="margin-top:16px; color:#333; line-height:1.5; word-break:break-word;">
-            <div id="descriptionContainer" style="max-height:4.8em; overflow:hidden; transition:max-height 0.4s ease;">
-              ${escapedDesc || '（説明がありません）'}
-            </div>
-            ${escapedDesc.length > 300 ? `
-              <div style="margin-top:8px;">
-                <a id="expandDesc" href="#" style="color:#065fd4; font-weight:500; cursor:pointer; text-decoration:none; display:block;">
-                  もっと見る
-                </a>
-                <a id="collapseDesc" href="#" style="color:#065fd4; font-weight:500; cursor:pointer; text-decoration:none; display:none;">
-                  折りたたむ
-                </a>
+            <div id="descriptionArea" style="margin-top:16px; color:#333; line-height:1.5; word-break:break-word;">
+              <div id="descriptionContainer" style="max-height:4.8em; overflow:hidden; transition:max-height 0.4s ease;">
+                （説明を読み込み中...）
               </div>
-            ` : ''}
-          </div>
-<div class="comments" id="commentsArea">
+              <div id="descToggleArea" style="margin-top:8px; display:none;">
+                <a id="expandDesc" href="#" style="color:#065fd4; font-weight:500; cursor:pointer; text-decoration:none; display:block;">もっと見る</a>
+                <a id="collapseDesc" href="#" style="color:#065fd4; font-weight:500; cursor:pointer; text-decoration:none; display:none;">折りたたむ</a>
+              </div>
+            </div>
+            <div class="comments" id="commentsArea">
               <h3 style="margin:24px 0 12px;">コメント</h3>
               <div id="commentsList"></div>
               <div id="commentsSentinel" style="height:32px"></div>
@@ -910,247 +809,108 @@ if (chId) {
       </div>
     `;
 
-
-const playerSelect = document.getElementById('playerSelect');
-const iframe = document.getElementById('videoIframe');
-
-if (playerSelect && iframe) {
-  const defaultPlayer = localStorage.getItem('defaultPlayer') || 'official';
-  let initialSrc = `https://www.youtube.com/embed/${videoId}?rel=0`;
-  let selectedValue = 'official';
-
-  switch (defaultPlayer) {
-    case 'official':
-      initialSrc = `https://www.youtube.com/embed/${videoId}?rel=0`;
-      selectedValue = 'official';
-      break;
-
-    case 'api1-original1':
-      initialSrc = `/watch.html?id=${videoId}&mode=api1-high`;
-      selectedValue = 'api1-original1';
-      break;
-
-    case 'api1-original2':
-      initialSrc = `/watch.html?id=${videoId}&mode=api1-prog`;
-      selectedValue = 'api1-original2';
-      break;
-
-    case 'api2-original1':
-      initialSrc = `/watch.html?id=${videoId}`;
-      selectedValue = 'api2-original1';
-      break;
-
-    case 'api2-original2':
-      initialSrc = `/watch.html?id=${videoId}&mode=360`;
-      selectedValue = 'api2-original2';
-      break;
-
-    default:
-
-      initialSrc = `https://www.youtube.com/embed/${videoId}?rel=0`;
-      selectedValue = 'official';
-  }
-
-  iframe.src = initialSrc;
-  playerSelect.value = selectedValue;
-
-
-  playerSelect.addEventListener('change', () => {
-    const val = playerSelect.value;
-    let newSrc = `https://www.youtube.com/embed/${videoId}?rel=0`;
-
-    switch (val) {
-      case 'official':
-        newSrc = `https://www.youtube.com/embed/${videoId}?rel=0`;
-        break;
-      case 'api1-original1':
-        newSrc = `/watch.html?id=${videoId}&mode=api1-high`;
-        break;
-      case 'api1-original2':
-        newSrc = `/watch.html?id=${videoId}&mode=api1-prog`;
-        break;
-      case 'api2-original1':
-        newSrc = `/watch.html?id=${videoId}`;
-        break;
-      case 'api2-original2':
-        newSrc = `/watch.html?id=${videoId}&mode=360`;
-        break;
-    }
-
-    iframe.src = newSrc;
-  });
-}
-   
-   // ダウンロードボタン 
-const downloadBtn = document.getElementById('downloadMainBtn');
-if (downloadBtn) {
-  downloadBtn.classList.remove('disabled');
-  downloadBtn.addEventListener('click', async () => {
-    try {
-     
-      let videoData = null;
-
-  
-try {
-  videoData = await fetchFastestNetlify(videoId);
-  if (videoData) {
-    console.log('ダウンロード用データ: K-tube API成功');
-  }
-} catch (e) {
-  console.warn('K-tubeダウンロードAPI失敗:', e);
-}
-
-   
-      if (!videoData) {
-        const proxyRes = await fetch(`/api/v2/video?v=${videoId}`);
-        if (proxyRes.ok) {
-          videoData = await proxyRes.json();
-          console.log('ダウンロード用データ: /api/v2/video から取得');
+    // ── ② プレイヤー切り替えイベントを即時登録 ──
+    const playerSelect = document.getElementById('playerSelect');
+    const iframe = document.getElementById('videoIframe');
+    if (playerSelect && iframe) {
+      playerSelect.addEventListener('change', () => {
+        const val = playerSelect.value;
+        let newSrc = `https://www.youtube.com/embed/${videoId}?rel=0`;
+        switch (val) {
+          case 'official': newSrc = `https://www.youtube.com/embed/${videoId}?rel=0`; break;
+          case 'api1-original1': newSrc = `/watch.html?id=${videoId}&mode=api1-high`; break;
+          case 'api1-original2': newSrc = `/watch.html?id=${videoId}&mode=api1-prog`; break;
+          case 'api2-original1': newSrc = `/watch.html?id=${videoId}`; break;
+          case 'api2-original2': newSrc = `/watch.html?id=${videoId}&mode=360`; break;
         }
-      }
+        iframe.src = newSrc;
+      });
+    }
 
+    // ── ③ ダウンロードボタンも即時登録 ──
+    const downloadBtn = document.getElementById('downloadMainBtn');
+    if (downloadBtn) {
+      downloadBtn.classList.remove('disabled');
+      downloadBtn.addEventListener('click', async () => {
+        try {
+          let videoData = null;
+          try {
+            videoData = await fetchFastestNetlify(videoId);
+          } catch (e) {}
+          if (!videoData) {
+            const proxyRes = await fetch(`/api/v2/video?v=${videoId}`);
+            if (proxyRes.ok) videoData = await proxyRes.json();
+          }
+          if (!videoData) throw new Error('ダウンロード用メタデータを取得できませんでした');
 
-      if (!videoData) {
-        throw new Error('ダウンロード用メタデータを取得できませんでした');
-      }
+          const prog = videoData.videoFormats?.find(f =>
+            f.type?.includes('video/mp4') &&
+            (f.qualityLabel?.includes('360') || f.itag === '18' || f.itag === 18)
+          ) || videoData.formatStreams?.find(f => f.itag === '18');
 
-     
-      const prog = videoData.videoFormats?.find(f =>
-        f.type?.includes('video/mp4') &&
-        (f.qualityLabel?.includes('360') || f.itag === '18' || f.itag === 18)
-      ) || videoData.formatStreams?.find(f => f.itag === '18');
-
-      if (prog?.url) {
-     
-        let downloadUrl = prog.url;
-        if (!downloadUrl.startsWith('http')) {
-          downloadUrl = `https://splendid-jelly-e731bd.netlify.app/${downloadUrl}`;
+          if (prog?.url) {
+            let downloadUrl = prog.url;
+            if (!downloadUrl.startsWith('http')) {
+              downloadUrl = `https://splendid-jelly-e731bd.netlify.app/${downloadUrl}`;
+            }
+            window.open(downloadUrl, '_blank');
+          } else {
+            alert("ストリームが見つかりませんでした。\n他の画質を試すか、後ほどお試しください。");
+          }
+        } catch (e) {
+          console.error('ダウンロードエラー:', e);
+          alert("ダウンロードの準備に失敗しました。\nコンソールを確認するか、後ほどお試しください。");
         }
-        window.open(downloadUrl, '_blank');
-      } else {
-        alert("ストリームが見つかりませんでした。\n他の画質を試すか、後ほどお試しください。");
-      }
-
-    } catch (e) {
-      console.error('ダウンロードエラー:', e);
-      alert("ダウンロードの準備に失敗しました。\nコンソールを確認するか、後ほどお試しください。");
-    }
-  });
-}
-
-
-    const watchChLink = app.querySelector('.watch-ch-link');
-    if (watchChLink) {
-      watchChLink.addEventListener('click', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (chId) location.hash = `channel=${chId}`;
       });
-    }   
-
-
-    const commentsArea = document.getElementById('commentsArea');
-    if (commentsArea) setupComments(videoId);
-
- 
-  const relatedList = document.getElementById('relatedList');
-if (relatedList) {
-  relatedList.innerHTML = '<div style="padding:20px; text-align:center; color:#606060;">読み込み中...</div>';
-
-  try {
-    let items = [];
-
-    // 🔥 強化検索クエリ
-    let searchQuery = metaData.title || videoId;
-
-    if ((metaData.uploader || metaData.uploaderName)) {
-      searchQuery += ' ' + (metaData.uploader || metaData.uploaderName);
     }
 
-    // ① 1回目検索（多めに取得）
-    const relatedData = await pipedFetch('/search', {
-      q: searchQuery,
-      filter: 'videos'
-    });
+    // ── ④ コメント・関連動画は即時開始 ──
+    setupComments(videoId);
 
-    items = Array.isArray(relatedData) ? relatedData :
-            (relatedData?.items || relatedData?.results || relatedData?.videos || []);
-
-    // 🔥 型フィルタ + 重複排除
-    items = items.filter(item => {
-      const relVid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
-      return relVid && relVid !== videoId;
-    });
-
-    // ② 足りなければタイトルのみで再検索
-    if (items.length < 6) {
-      const fallback = await pipedFetch('/search', {
-        q: metaData.title || videoId
-      });
-
-      let more = Array.isArray(fallback) ? fallback :
-                 (fallback?.items || fallback?.results || fallback?.videos || []);
-
-      more = more.filter(item => {
-        const relVid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
-        return relVid && relVid !== videoId;
-      });
-
-      items = [...items, ...more];
+    const relatedList = document.getElementById('relatedList');
+    if (relatedList) {
+      relatedList.innerHTML = '<div style="padding:20px; text-align:center; color:#606060;">読み込み中...</div>';
     }
 
-    // 🔥 重複動画ID削除
-    const seen = new Set();
-    items = items.filter(item => {
-      const relVid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
-      if (seen.has(relVid)) return false;
-      seen.add(relVid);
-      return true;
-    });
+    // ── ⑤ メタデータ取得（await するが、骨組みは既に出ている） ──
+    const rawMeta = await fetchFastestNetlify(videoId).catch(() => null);
+    const metaData = normalizeMetadata(rawMeta || {}, 'K-tube API (race)');
 
-    // 🔥 最低6件保証
-    const finalItems = items.slice(0, 6);
-
-    if (finalItems.length) {
-      relatedList.innerHTML = '';
-
-      finalItems.forEach(item => {
-        const relVid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
-        const thumb = `https://i.ytimg.com/vi/${relVid}/hqdefault.jpg`;
-
-        const div = document.createElement('div');
-        div.className = 'related-item';
-        div.innerHTML = `
-          <div class="related-thumb">
-            <img src="${thumb}" alt="" loading="lazy" decoding="async"
-              onerror="this.src='https://i.ytimg.com/vi/${relVid}/mqdefault.jpg'">
-          </div>
-          <div class="related-info">
-            <div class="title">${escapeHtml(item.title || '(タイトルなし)')}</div>
-            <div style="color:#606060;font-size:13px">
-              ${escapeHtml(item.uploaderName || item.uploader || '不明')} ・ ${fmtNum(item.views || 0)} 回
-            </div>
-          </div>
-        `;
-        div.addEventListener('click', () => location.hash = `watch=${relVid}`);
-        relatedList.appendChild(div);
-      });
-
-    } else {
-      relatedList.innerHTML = '<div style="padding:20px; color:#606060;">関連動画が見つかりませんでした</div>';
+    const title = metaData.title || `動画（ID: ${videoId}）`;
+    const views = fmtNum(metaData.viewCount ?? metaData.views ?? 0);
+    const likes = fmtNum(metaData.likeCount ?? 0);
+    let uploaded = '---';
+    if (metaData.published || metaData.uploadDate || metaData.uploaded) {
+      try {
+        uploaded = timeAgo(new Date(metaData.published || metaData.uploadDate || metaData.uploaded).toISOString());
+      } catch {}
     }
 
-  } catch (e) {
-    console.error('関連動画取得失敗:', e);
-    relatedList.innerHTML = '<div style="padding:20px; color:#c00;">関連動画の読み込みに失敗しました</div>';
-  }
-}
-    
+    const titleEl = document.getElementById('watchTitle');
+    if (titleEl) titleEl.textContent = title;
+    const viewsEl = document.getElementById('watchViews');
+    if (viewsEl) viewsEl.textContent = `${views} 回視聴`;
+    const uploadedEl = document.getElementById('watchUploaded');
+    if (uploadedEl) uploadedEl.textContent = uploaded;
+    const likesEl = document.getElementById('watchLikes');
+    if (likesEl) likesEl.textContent = `${likes} 👍`;
+
+    // 説明文
+    let rawDesc = metaData.description || metaData.shortDescription || '説明文は現在取得できませんでした';
+    rawDesc = rawDesc.trim().replace(/^\s+|\s+$/g, '').replace(/^(?:\r\n|\r|\n|　)+/, '').replace(/\s{2,}/g, ' ');
+    rawDesc = rawDesc.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:#065fd4; text-decoration:underline;">$1</a>');
+    const descContainer = document.getElementById('descriptionContainer');
+    if (descContainer) descContainer.innerHTML = rawDesc || '（説明がありません）';
+    if (rawDesc.length > 300) {
+      const toggleArea = document.getElementById('descToggleArea');
+      if (toggleArea) toggleArea.style.display = 'block';
+    }
+
+    // 説明文の展開/折りたたみ
     setTimeout(() => {
       const container = document.getElementById('descriptionContainer');
       const expandLink = document.getElementById('expandDesc');
       const collapseLink = document.getElementById('collapseDesc');
-
       if (container && expandLink) {
         expandLink.addEventListener('click', e => {
           e.preventDefault();
@@ -1159,7 +919,6 @@ if (relatedList) {
           if (collapseLink) collapseLink.style.display = 'block';
         });
       }
-
       if (collapseLink) {
         collapseLink.addEventListener('click', e => {
           e.preventDefault();
@@ -1168,7 +927,136 @@ if (relatedList) {
           if (expandLink) expandLink.style.display = 'block';
         });
       }
-    }, 300);
+    }, 0);
+
+    // ── ⑥ チャンネル情報（仮表示 → 後から埋める） ──
+    let chName = metaData.uploader || metaData.author || metaData.channelName || metaData.uploaderName || '不明';
+    let chId = metaData.channelId || metaData.authorId || (metaData.uploaderUrl?.split('/').pop() || '');
+    let chThumb = toYt3Avatar(metaData.uploaderAvatar || metaData.avatar || '', 88);
+    let subscriberCount = metaData.subscriberCount ?? 0;
+
+    const chLinkEl = document.getElementById('watchChLink');
+    if (chLinkEl) {
+      chLinkEl.textContent = chName;
+      chLinkEl.href = chId ? `#channel=${chId}` : '#';
+      chLinkEl.addEventListener('click', e => {
+        e.preventDefault();
+        if (chId) location.hash = `channel=${chId}`;
+      });
+    }
+    if (chThumb) {
+      const img = document.getElementById('watchChThumb');
+      if (img) img.src = chThumb;
+    }
+    const subsEl0 = document.getElementById('watchChSubs');
+    if (subsEl0) {
+      subsEl0.textContent = (typeof subscriberCount === 'number' ? fmtNum(subscriberCount) : '---') + ' 人の登録者';
+    }
+
+    // チャンネル情報を後から取得（待たない）
+    if (chId) {
+      (async () => {
+        try {
+          const thumb = await getChannelThumbPiped(chId);
+          if (thumb) {
+            const img = document.getElementById('watchChThumb');
+            if (img) img.src = thumb;
+          }
+        } catch (e) {}
+        try {
+          const channelData = await pipedFetch(`/channel/${chId}`);
+          if (channelData) {
+            if (channelData.name) {
+              const link = document.getElementById('watchChLink');
+              if (link) link.textContent = channelData.name;
+            }
+            if (typeof channelData.subscriberCount === 'number' && channelData.subscriberCount > 0) {
+              const subsEl = document.getElementById('watchChSubs');
+              if (subsEl) subsEl.textContent = `${fmtNum(channelData.subscriberCount)} 人の登録者`;
+            } else if (channelData.subscriberCount === -1 || channelData.subscriberCount === null) {
+              const subsEl = document.getElementById('watchChSubs');
+              if (subsEl) subsEl.textContent = '非公開';
+            }
+          }
+        } catch (e) {}
+      })();
+    }
+
+    // 履歴追加
+    if (metaData.title) {
+      addToHistory(videoId, metaData.title, metaData.thumbnail || '', chName, metaData.uploaderUrl || (chId ? `/channel/${chId}` : ''));
+    }
+
+    // ── ⑦ 関連動画を非同期取得 ──
+    if (relatedList) {
+      (async () => {
+        try {
+          let items = [];
+          let searchQuery = metaData.title || videoId;
+          if (metaData.uploader || metaData.uploaderName) {
+            searchQuery += ' ' + (metaData.uploader || metaData.uploaderName);
+          }
+
+          const relatedData = await pipedFetch('/search', { q: searchQuery, filter: 'videos' });
+          items = Array.isArray(relatedData) ? relatedData :
+                  (relatedData?.items || relatedData?.results || relatedData?.videos || []);
+
+          items = items.filter(item => {
+            const relVid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
+            return relVid && relVid !== videoId;
+          });
+
+          if (items.length < 6) {
+            const fallback = await pipedFetch('/search', { q: metaData.title || videoId });
+            let more = Array.isArray(fallback) ? fallback :
+                       (fallback?.items || fallback?.results || fallback?.videos || []);
+            more = more.filter(item => {
+              const relVid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
+              return relVid && relVid !== videoId;
+            });
+            items = [...items, ...more];
+          }
+
+          const seen = new Set();
+          items = items.filter(item => {
+            const relVid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
+            if (seen.has(relVid)) return false;
+            seen.add(relVid);
+            return true;
+          });
+
+          const finalItems = items.slice(0, 6);
+          if (finalItems.length) {
+            relatedList.innerHTML = '';
+            finalItems.forEach(item => {
+              const relVid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
+              const thumb = `https://i.ytimg.com/vi/${relVid}/mqdefault.jpg`;
+              const div = document.createElement('div');
+              div.className = 'related-item';
+              div.innerHTML = `
+                <div class="related-thumb">
+                  <img src="${thumb}" alt="" loading="lazy" decoding="async"
+                    onerror="this.src='https://i.ytimg.com/vi/${relVid}/mqdefault.jpg'">
+                </div>
+                <div class="related-info">
+                  <div class="title">${escapeHtml(item.title || '(タイトルなし)')}</div>
+                  <div style="color:#606060;font-size:13px">
+                    ${escapeHtml(item.uploaderName || item.uploader || '不明')} ・ ${fmtNum(item.views || 0)} 回
+                  </div>
+                </div>
+              `;
+              div.addEventListener('click', () => location.hash = `watch=${relVid}`);
+              relatedList.appendChild(div);
+            });
+          } else {
+            relatedList.innerHTML = '<div style="padding:20px; color:#606060;">関連動画が見つかりませんでした</div>';
+          }
+        } catch (e) {
+          console.error('関連動画取得失敗:', e);
+          relatedList.innerHTML = '<div style="padding:20px; color:#c00;">関連動画の読み込みに失敗しました</div>';
+        }
+      })();
+    }
 
   } catch (fatalErr) {
     console.error('renderWatch 全体エラー:', fatalErr);
@@ -1184,12 +1072,10 @@ if (relatedList) {
     `;
   }
 }
-     
- function normalizeMetadata(data, source) {
-  // パターンB（独自形式）の channel オブジェクトを展開
+
+function normalizeMetadata(data, source) {
   const ch = data.channel || {};
 
-  // viewCount が "29,415,176回視聴" のような文字列の場合、数値に変換
   function parseViewCount(v) {
     if (typeof v === 'number') return v;
     if (typeof v !== 'string') return 0;
@@ -1287,7 +1173,6 @@ const loadMore = async () => {
     let rawVideos = [];
     let chData = null;
 
-    // ① まず pipedFetch（Piped/Invidious 並列レース）
     chData = await pipedFetch(`/channel/${channelId}`);
     rawVideos =
       chData.relatedStreams ||
@@ -1295,7 +1180,6 @@ const loadMore = async () => {
       chData.videos ||
       [];
 
-    // ② Piped が勝って relatedStreams が空の場合、Invidious を直接叩く
     if (rawVideos.length === 0) {
       console.warn(`[renderChannel] ${channelId} 動画0件 → Invidious 直接取得へ`);
       try {
@@ -1312,7 +1196,6 @@ const loadMore = async () => {
       }
     }
 
-    // ③ Piped の nextpage トークンで追加取得（両方空だった場合の保険）
     if (rawVideos.length === 0 && chData?.nextpage) {
       try {
         const nextData = await pipedFetch(`/nextpage/channel/${channelId}`, {
@@ -1901,7 +1784,7 @@ function renderAbout() {
         </div>
         
         <div style="text-align: center; margin: 60px 0; color: #666; font-size: 15px;">
-          © 2025-2026 K-tube All Rights Reserved.<br>
+          © 2024-2026 K-tube All Rights Reserved.<br>
   
         </div>
         
