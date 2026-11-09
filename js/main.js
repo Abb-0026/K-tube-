@@ -378,10 +378,19 @@ async function loadHome() {
   const grid = el('videoGrid');
   try {
     const data = await pipedFetch('/trending', { region: 'JP' });
-    for (const item of data || []) {
-      const card = await makeVideoCard(item);
-      grid.appendChild(card);
+    const items = data || [];
+
+    // 並列でカード生成
+    const cards = await Promise.all(
+      items.map(item => makeVideoCard(item))
+    );
+
+    // DocumentFragment にまとめて一括追加
+    const frag = document.createDocumentFragment();
+    for (const card of cards) {
+      if (card) frag.appendChild(card);
     }
+    grid.appendChild(frag);
   } catch (e) {
     console.error(e);
     grid.innerHTML += `<div style="color:#c00; padding:16px; text-align:center;">
@@ -471,27 +480,35 @@ async function loadStats() {
         const grid = el('videoGrid');
         let loading = false;
         const loadMore = async () => {
-          if (loading) return;
-          loading = true;
-          try {
-            const data = await pipedFetch('/search', { q, filter: 'videos' });
-            let items = [];
-            if (Array.isArray(data)) {
-              items = data;
-            } else if (data && typeof data === 'object') {
-              items = data.items || data.results || data.videos || data || [];
-            }
-            for (const item of items) {
-              const card = await makeVideoCard(item);
-              grid.appendChild(card);
-            }
-          } catch (e) {
-            console.error(e);
-            grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
-          } finally {
-            loading = false;
-          }
-        };
+  if (loading) return;
+  loading = true;
+  try {
+    const data = await pipedFetch('/search', { q, filter: 'videos' });
+    let items = [];
+    if (Array.isArray(data)) {
+      items = data;
+    } else if (data && typeof data === 'object') {
+      items = data.items || data.results || data.videos || data || [];
+    }
+
+    // 並列でカード生成
+    const cards = await Promise.all(
+      items.map(item => makeVideoCard(item))
+    );
+
+    // 一括追加
+    const frag = document.createDocumentFragment();
+    for (const card of cards) {
+      if (card) frag.appendChild(card);
+    }
+    grid.appendChild(frag);
+  } catch (e) {
+    console.error(e);
+    grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
+  } finally {
+    loading = false;
+  }
+};
         const sentinel = el('searchSentinel');
         const io = new IntersectionObserver(entries => {
           entries.forEach(ent => { if (ent.isIntersecting) loadMore(); });
@@ -1275,10 +1292,14 @@ const loadMore = async () => {
       return;
     }
 
-    for (const v of rawVideos) {
-      const card = await makeVideoCard(v);
-      grid.appendChild(card);
-    }
+const cards = await Promise.all(
+  rawVideos.map(v => makeVideoCard(v))
+);
+const frag = document.createDocumentFragment();
+for (const card of cards) {
+  if (card) frag.appendChild(card);
+}
+grid.appendChild(frag);
   } catch (e) {
     console.error('チャンネル動画取得エラー:', e);
     grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
