@@ -259,7 +259,6 @@ async function loadVideoWithFallback() {
   let attempts = 0;
   let index = 0;
   const originalMode = mode;
-  let lastSuccessMode = null;
 
   while (attempts < MAX_ATTEMPTS) {
     const targetMode = order[index];
@@ -269,8 +268,20 @@ async function loadVideoWithFallback() {
     try {
       await tryLoadWithMode(targetMode);
       console.log(`[playwatch] 成功: ${targetMode}`);
-      lastSuccessMode = targetMode;
       if (loadingEl) loadingEl.style.display = "none";
+
+      // ── 親ウィンドウに「どのモードで成功したか」を通知 ──
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'ktube-player-mode-changed',
+            mode: targetMode,
+            videoId: videoId
+          }, '*');
+        }
+      } catch (e) {
+        console.warn('postMessage failed', e);
+      }
 
       // 最初のモードと違うモードで成功した場合のみトースト表示
       if (targetMode !== originalMode) {
