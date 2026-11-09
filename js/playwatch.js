@@ -312,7 +312,7 @@ async function loadVideoWithFallback() {
     attempts++;
     console.log(`[playwatch] 試行 ${attempts}: ${targetMode}`);
 
-    try {
+       try {
       await tryLoadWithMode(targetMode);
       console.log(`[playwatch] 成功: ${targetMode}`);
       if (loadingEl) loadingEl.style.display = "none";
@@ -320,11 +320,14 @@ async function loadVideoWithFallback() {
       // googlevideo.com ブロック検知をセット
       setupGooglevideoBlockDetector(targetMode);
 
-      // 最初のモードと違うモードで成功した場合のみトースト表示
+      // 最初のモードと違うモードで成功した場合
       if (targetMode !== originalMode) {
+        // トースト表示（playwatch内）
         showModeToast(
           `再生方法を「${modeLabel(targetMode)}」に切り替えました`
         );
+        // 親に通知（playerSelect 同期用）
+        notifyParentModeChanged(targetMode, originalMode);
       }
       return;
     } catch (err) {
@@ -384,4 +387,15 @@ if (!videoId) {
   showError("動画IDが指定されていません");
 } else {
   loadVideoWithFallback();
+}
+
+// ==================== 親へのモード変更通知 ====================
+function notifyParentModeChanged(newMode, originalMode) {
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({
+      type: 'mode-changed',
+      mode: newMode,
+      originalMode: originalMode
+    }, '*');
+  }
 }
