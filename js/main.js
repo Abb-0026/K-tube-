@@ -712,7 +712,7 @@ async function fetchFastestNetlify(videoId) {
 
 
 // =============================================
-// 再生ページ（超高速化版）
+// 再生ページ（超高速化版 + googlevideo ブロック検知）
 // =============================================
 async function renderWatch(videoId) {
   try {
@@ -809,9 +809,48 @@ async function renderWatch(videoId) {
       </div>
     `;
 
-    // ── ② プレイヤー切り替えイベントを即時登録 ──
+    // ── ② プレイヤー切り替えイベント + googlevideo ブロック検知 ──
     const playerSelect = document.getElementById('playerSelect');
     const iframe = document.getElementById('videoIframe');
+    let currentMode = selectedValue;
+    let _errorHandled = false;
+
+    // グローバルリスナーは1つだけにする（多重登録防止）
+    if (window._ktubePlayerErrorHandler) {
+      window.removeEventListener('message', window._ktubePlayerErrorHandler);
+    }
+    window._ktubePlayerErrorHandler = function(e) {
+      if (!e.data || e.data.type !== 'player-error') return;
+      if (_errorHandled) return;
+
+      const errMode = e.data.mode || currentMode;
+      console.warn(`[renderWatch] player-error 受信: reason=${e.data.reason} mode=${errMode}`);
+
+      // api1-original2 なら再試行（ループ）
+      if (errMode === 'api1-original2') {
+        console.log('[renderWatch] api1-original2 を再試行（ループ）');
+        if (iframe) {
+          iframe.src = `/watch.html?id=${videoId}&mode=api1-prog&t=${Date.now()}`;
+        }
+        if (typeof showModeToast === 'function') {
+          showModeToast('「API1・オリジナル2」で再試行しています');
+        }
+        return;
+      }
+
+      // それ以外（api2-original1 / api2-original2 / api1-original1）→ api1-original2 に切り替え
+      _errorHandled = true;
+      currentMode = 'api1-original2';
+      if (playerSelect) playerSelect.value = 'api1-original2';
+      if (iframe) {
+        iframe.src = `/watch.html?id=${videoId}&mode=api1-prog&t=${Date.now()}`;
+      }
+      if (typeof showModeToast === 'function') {
+        showModeToast('埋め込みがブロックされたため「API1・オリジナル2」に切り替えました');
+      }
+    };
+    window.addEventListener('message', window._ktubePlayerErrorHandler);
+
     if (playerSelect && iframe) {
       playerSelect.addEventListener('change', () => {
         const val = playerSelect.value;
@@ -824,6 +863,8 @@ async function renderWatch(videoId) {
           case 'api2-original2': newSrc = `/watch.html?id=${videoId}&mode=360`; break;
         }
         iframe.src = newSrc;
+        currentMode = val;
+        _errorHandled = false; // 手動変更でエラーフラグをリセット
       });
     }
 
