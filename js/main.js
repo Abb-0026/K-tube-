@@ -14,11 +14,13 @@ let observerMap = new Map();
 
 let commentsPageToken = {};
 
+// ─────────────────────────────────────────────
+// 数値フォーマット（Intl キャッシュで高速化）
+// ─────────────────────────────────────────────
+const _numFmt = new Intl.NumberFormat('en-US');
 function fmtNum(n) {
   if (n == null || isNaN(n)) return '0';
-  n = Number(n);
-
-  return n.toLocaleString('en-US');
+  return _numFmt.format(Number(n));
 }
 
 function timeAgo(dateStr){
@@ -147,7 +149,7 @@ if (endpoint.startsWith('/channel/')) {
 }
 
 // ─────────────────────────────────────────────
-// Piped と Invidious を並列で叩いて先勝ち採用
+// Piped と Invidious を並列で叩いて先勝ち採用（タイムアウト6秒）
 // ─────────────────────────────────────────────
 async function pipedFetch(endpoint, params = {}) {
   const path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
@@ -159,8 +161,8 @@ async function pipedFetch(endpoint, params = {}) {
 
   try {
     const result = await Promise.any([
-      rawFetchJson(pipedUrl, 12000).then(data => ({ source: 'piped', data })),
-      rawFetchJson(invUrl,   12000).then(data => ({
+      rawFetchJson(pipedUrl, 6000).then(data => ({ source: 'piped', data })),
+      rawFetchJson(invUrl,   6000).then(data => ({
         source: 'invidious',
         data: normalizeInvidious(endpoint, data)
       }))
@@ -180,7 +182,6 @@ async function pipedFetch(endpoint, params = {}) {
 // ─────────────────────────────────────────────
 function toYt3Avatar(url, size = 88) {
   if (!url || typeof url !== 'string') return '';
-
   if (url.startsWith('data:')) return '';
 
   try {
@@ -220,6 +221,49 @@ async function getChannelThumbPiped(channelId) {
     console.warn('channel thumb failed', e);
     return '';
   }
+}
+
+// ─────────────────────────────────────────────
+// 同時実行数制限付きヘルパー
+// ─────────────────────────────────────────────
+async function runWithConcurrency(tasks, limit = 6) {
+  const results = [];
+  let idx = 0;
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+    while (idx < tasks.length) {
+      const i = idx++;
+      try {
+        results[i] = await tasks[i]();
+      } catch (e) {
+        results[i] = null;
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+// カード群のチャンネルアイコンを一括で埋める（重複排除 + 並列）
+async function fillChannelThumbs(cards) {
+  const idToImgs = new Map();
+  cards.forEach(card => {
+    const chId = card.querySelector('.ch-link')?.dataset.channel;
+    const img = card.querySelector('.channel-thumb img');
+    if (!chId || !img) return;
+    if (!idToImgs.has(chId)) idToImgs.set(chId, []);
+    idToImgs.get(chId).push(img);
+  });
+
+  const entries = [...idToImgs.entries()];
+  await runWithConcurrency(
+    entries.map(([chId, imgs]) => async () => {
+      const thumb = await getChannelThumbPiped(chId);
+      if (thumb) {
+        imgs.forEach(img => { img.src = thumb; });
+      }
+    }),
+    6
+  );
 }
 
 window.addEventListener('hashchange', renderByHash);
@@ -380,17 +424,17 @@ async function loadHome() {
     const data = await pipedFetch('/trending', { region: 'JP' });
     const items = data || [];
 
-    // 並列でカード生成
-    const cards = await Promise.all(
-      items.map(item => makeVideoCard(item))
-    );
-
-    // DocumentFragment にまとめて一括追加
     const frag = document.createDocumentFragment();
-    for (const card of cards) {
-      if (card) frag.appendChild(card);
+    const cards = [];
+    for (const item of items) {
+      const card = makeVideoCard(item);
+      cards.push(card);
+      frag.appendChild(card);
     }
-    grid.appendChild(frag);
+    grid.appendChild(frag); // 即座に一括表示
+
+    // アイコンは後から並列で埋める
+    fillChannelThumbs(cards);
   } catch (e) {
     console.error(e);
     grid.innerHTML += `<div style="color:#c00; padding:16px; text-align:center;">
@@ -401,26 +445,30 @@ async function loadHome() {
   }
 }
 
-// 動画カード作成
-async function makeVideoCard(item) {
+// 動画カード作成（アイコンなし即返し・サムネイル遅延+低解像度→高解像度）
+function makeVideoCard(item) {
   const vid = item.url?.split('v=')[1] || item.url?.split('/').pop() || '';
   const title = item.title || '';
-  
-const th = `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
+  const th = `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`;
+  const thHi = `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
   const chId = item.uploaderUrl?.split('/').pop() || '';
   const chTitle = item.uploaderName || '';
   const views = item.views || 0;
   const publishedAt = item.uploadedDate || item.uploaded || '';
-  const channelThumb = await getChannelThumbPiped(chId);
 
   const div = document.createElement('div');
   div.className = 'card';
   div.innerHTML = `
     <div class="thumb" data-vid="${vid}">
-      <img src="${th}" alt="">
+      <img src="${th}"
+           data-hi="${thHi}"
+           alt=""
+           loading="lazy"
+           decoding="async"
+           onload="if(this.dataset.hi&&this.src.includes('mqdefault')){const i=new Image();i.onload=()=>{this.src=this.dataset.hi;};i.src=this.dataset.hi;}">
     </div>
     <div class="meta">
-      <div class="channel-thumb"><img src="${channelThumb}" alt=""></div>
+      <div class="channel-thumb"><img src="" alt="" loading="lazy" decoding="async"></div>
       <div class="info">
         <div class="title">${escapeHtml(title)}</div>
         <div class="sub">
@@ -480,39 +528,38 @@ async function loadStats() {
         const grid = el('videoGrid');
         let loading = false;
         const loadMore = async () => {
-  if (loading) return;
-  loading = true;
-  try {
-    const data = await pipedFetch('/search', { q, filter: 'videos' });
-    let items = [];
-    if (Array.isArray(data)) {
-      items = data;
-    } else if (data && typeof data === 'object') {
-      items = data.items || data.results || data.videos || data || [];
-    }
+          if (loading) return;
+          loading = true;
+          try {
+            const data = await pipedFetch('/search', { q, filter: 'videos' });
+            let items = [];
+            if (Array.isArray(data)) {
+              items = data;
+            } else if (data && typeof data === 'object') {
+              items = data.items || data.results || data.videos || data || [];
+            }
 
-    // 並列でカード生成
-    const cards = await Promise.all(
-      items.map(item => makeVideoCard(item))
-    );
+            const frag = document.createDocumentFragment();
+            const cards = [];
+            for (const item of items) {
+              const card = makeVideoCard(item);
+              cards.push(card);
+              frag.appendChild(card);
+            }
+            grid.appendChild(frag);
 
-    // 一括追加
-    const frag = document.createDocumentFragment();
-    for (const card of cards) {
-      if (card) frag.appendChild(card);
-    }
-    grid.appendChild(frag);
-  } catch (e) {
-    console.error(e);
-    grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
-  } finally {
-    loading = false;
-  }
-};
+            fillChannelThumbs(cards);
+          } catch (e) {
+            console.error(e);
+            grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
+          } finally {
+            loading = false;
+          }
+        };
         const sentinel = el('searchSentinel');
         const io = new IntersectionObserver(entries => {
           entries.forEach(ent => { if (ent.isIntersecting) loadMore(); });
-        }, { rootMargin: '400px' });
+        }, { rootMargin: '800px' });
         io.observe(sentinel);
         observerMap.set('search', io);
         loadMore();
@@ -1146,12 +1193,10 @@ if (relatedList) {
   function parseViewCount(v) {
     if (typeof v === 'number') return v;
     if (typeof v !== 'string') return 0;
-    // "29,415,176回視聴" → 29415176
     const cleaned = v.replace(/[^\d]/g, '');
     return cleaned ? parseInt(cleaned, 10) : 0;
   }
 
-  // likeCount も同様
   function parseLikeCount(v) {
     if (typeof v === 'number') return v;
     if (typeof v !== 'string') return 0;
@@ -1159,14 +1204,12 @@ if (relatedList) {
     return cleaned ? parseInt(cleaned, 10) : 0;
   }
 
-  // published が数値（UNIX秒）か文字列かを判定
   function parsePublished(v) {
     if (!v) return '';
     if (typeof v === 'number') {
       return new Date(v * 1000).toISOString();
     }
     if (typeof v === 'string') {
-      // "2024/10/16" のような形式
       const d = new Date(v.replace(/\//g, '-'));
       if (!isNaN(d.getTime())) return d.toISOString();
       return v;
@@ -1181,7 +1224,6 @@ if (relatedList) {
     likeCount: parseLikeCount(data.likeCount || data.likes || 0),
     published: parsePublished(data.published || data.uploadDate || data.uploaded || data.dateText || data.released || ''),
     
-    // パターンA（Invidious形式）とパターンB（独自形式）の両方に対応
     uploader: data.uploader || data.author || data.channelName || ch.name || '',
     channelId: data.channelId || data.authorId || ch.id || '',
     uploaderAvatar: data.uploaderAvatar || data.avatar || data.authorThumbnails?.slice(-1)[0]?.url || ch.avatar || '',
@@ -1189,13 +1231,11 @@ if (relatedList) {
     thumbnail: data.thumbnail || data.videoThumbnails?.find(t => t.quality === 'maxres')?.url || data.videoThumbnails?.[0]?.url || '',
     lengthSeconds: data.lengthSeconds || data.duration || 0,
     
-    // 登録者数（パターンBは "チャンネル登録者数 334万人" のような文字列）
     subscriberCount: (() => {
       if (typeof data.subscriberCount === 'number') return data.subscriberCount;
       if (typeof data.subCount === 'number') return data.subCount;
       const subsStr = data.subs || ch.subs || data.subCountText || '';
       if (!subsStr) return 0;
-      // "4.55M" → 4550000、"チャンネル登録者数 334万人" → 3340000
       const m = subsStr.match(/([\d.,]+)\s*([万億MKB]?)/);
       if (!m) return 0;
       const num = parseFloat(m[1].replace(/,/g, ''));
@@ -1292,14 +1332,16 @@ const loadMore = async () => {
       return;
     }
 
-const cards = await Promise.all(
-  rawVideos.map(v => makeVideoCard(v))
-);
-const frag = document.createDocumentFragment();
-for (const card of cards) {
-  if (card) frag.appendChild(card);
-}
-grid.appendChild(frag);
+    const frag = document.createDocumentFragment();
+    const cards = [];
+    for (const v of rawVideos) {
+      const card = makeVideoCard(v);
+      cards.push(card);
+      frag.appendChild(card);
+    }
+    grid.appendChild(frag);
+
+    fillChannelThumbs(cards);
   } catch (e) {
     console.error('チャンネル動画取得エラー:', e);
     grid.innerHTML += `<div style="color:#c00">読み込み失敗: ${escapeHtml(e.message)}</div>`;
@@ -1310,7 +1352,7 @@ grid.appendChild(frag);
           const sentinel = el('channelSentinel');
           const io = new IntersectionObserver(entries => {
             entries.forEach(ent => { if (ent.isIntersecting) loadMore(); });
-          }, { rootMargin: '400px' });
+          }, { rootMargin: '800px' });
           io.observe(sentinel);
           observerMap.set(`channel_${channelId}`, io);
           loadMore();
@@ -1549,9 +1591,7 @@ function addToHistory(videoId, title, thumbnail, uploaderName, uploaderUrl) {
 
   let history = getHistory();
 
- 
   history = history.filter(item => item.videoId !== videoId);
-
 
   history.unshift({
     videoId,
@@ -1561,7 +1601,6 @@ function addToHistory(videoId, title, thumbnail, uploaderName, uploaderUrl) {
     uploaderUrl   : uploaderUrl   || '',
     watchedAt     : new Date().toISOString()
   });
-
 
   if (history.length > MAX_HISTORY) {
     history = history.slice(0, MAX_HISTORY);
