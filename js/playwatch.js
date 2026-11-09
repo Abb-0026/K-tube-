@@ -13,6 +13,7 @@ const errorEl = document.getElementById("error-message");
 let toastTimer = null;
 
 function showModeToast(message) {
+  // 既存トーストがあれば削除
   let toast = document.getElementById("mode-toast");
   if (toast) {
     toast.remove();
@@ -28,66 +29,18 @@ function showModeToast(message) {
   `;
   document.body.appendChild(toast);
 
+  // 次フレームで .show を付けてスライドイン
   requestAnimationFrame(() => {
     requestAnimationFrame(() => toast.classList.add("show"));
   });
 
+  // 4秒後にスライドアウトして削除
   toastTimer = setTimeout(() => {
     toast.classList.remove("show");
     setTimeout(() => {
       if (toast.parentNode) toast.remove();
-    }, 400);
+    }, 400); // トランジション時間と合わせる
   }, 4000);
-}
-
-// ==================== 親へのエラー通知 ====================
-function notifyParentError(reason, currentMode) {
-  console.warn(`[playwatch] 親にエラー通知: ${reason} (mode=${currentMode})`);
-  if (window.parent && window.parent !== window) {
-    window.parent.postMessage({
-      type: 'player-error',
-      reason,
-      mode: currentMode
-    }, '*');
-  }
-}
-
-// ==================== googlevideo.com ブロック検知 ====================
-// videoEl の src が googlevideo.com を含む場合、error イベントで親に通知
-let _blockCheckTimer = null;
-let _blockNotified = false;
-
-function setupGooglevideoBlockDetector(currentMode) {
-  // 前回のタイマーをクリア
-  if (_blockCheckTimer) {
-    clearTimeout(_blockCheckTimer);
-    _blockCheckTimer = null;
-  }
-  _blockNotified = false;
-
-  const checkSrc = () => {
-    const src = videoEl.src || '';
-    return src.includes('googlevideo.com') || src.includes('/videoplayback');
-  };
-
-  // ① video error イベント
-  const onError = () => {
-    if (_blockNotified) return;
-    if (!checkSrc()) return;
-    _blockNotified = true;
-    notifyParentError('googlevideo-error', currentMode);
-  };
-  videoEl.addEventListener('error', onError);
-
-  // ② タイムアウト検知（8秒以内に readyState が 2 以上にならなければブロック扱い）
-  _blockCheckTimer = setTimeout(() => {
-    if (_blockNotified) return;
-    if (!checkSrc()) return;
-    if (videoEl.readyState < 2) {
-      _blockNotified = true;
-      notifyParentError('googlevideo-timeout', currentMode);
-    }
-  }, 8000);
 }
 
 // ==================== フォールバック順序の定義 ====================
@@ -306,28 +259,24 @@ async function loadVideoWithFallback() {
   let attempts = 0;
   let index = 0;
   const originalMode = mode;
+  let lastSuccessMode = null;
 
   while (attempts < MAX_ATTEMPTS) {
     const targetMode = order[index];
     attempts++;
     console.log(`[playwatch] 試行 ${attempts}: ${targetMode}`);
 
-       try {
+    try {
       await tryLoadWithMode(targetMode);
       console.log(`[playwatch] 成功: ${targetMode}`);
+      lastSuccessMode = targetMode;
       if (loadingEl) loadingEl.style.display = "none";
 
-      // googlevideo.com ブロック検知をセット
-      setupGooglevideoBlockDetector(targetMode);
-
-      // 最初のモードと違うモードで成功した場合
+      // 最初のモードと違うモードで成功した場合のみトースト表示
       if (targetMode !== originalMode) {
-        // トースト表示（playwatch内）
         showModeToast(
           `再生方法を「${modeLabel(targetMode)}」に切り替えました`
         );
-        // 親に通知（playerSelect 同期用）
-        notifyParentModeChanged(targetMode, originalMode);
       }
       return;
     } catch (err) {
@@ -387,15 +336,4 @@ if (!videoId) {
   showError("動画IDが指定されていません");
 } else {
   loadVideoWithFallback();
-}
-
-// ==================== 親へのモード変更通知 ====================
-function notifyParentModeChanged(newMode, originalMode) {
-  if (window.parent && window.parent !== window) {
-    window.parent.postMessage({
-      type: 'mode-changed',
-      mode: newMode,
-      originalMode: originalMode
-    }, '*');
-  }
 }
