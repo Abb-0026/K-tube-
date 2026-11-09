@@ -809,47 +809,62 @@ async function renderWatch(videoId) {
       </div>
     `;
 
-    // ── ② プレイヤー切り替えイベント + googlevideo ブロック検知 ──
+     // ── ② プレイヤー切り替えイベント + モード同期 + googlevideo ブロック検知 ──
     const playerSelect = document.getElementById('playerSelect');
     const iframe = document.getElementById('videoIframe');
     let currentMode = selectedValue;
     let _errorHandled = false;
 
-    // グローバルリスナーは1つだけにする（多重登録防止）
-    if (window._ktubePlayerErrorHandler) {
-      window.removeEventListener('message', window._ktubePlayerErrorHandler);
+    // iframe 内の playwatch.js からのメッセージを一元処理
+    if (window._ktubePlayerMsgHandler) {
+      window.removeEventListener('message', window._ktubePlayerMsgHandler);
     }
-    window._ktubePlayerErrorHandler = function(e) {
-      if (!e.data || e.data.type !== 'player-error') return;
-      if (_errorHandled) return;
+    window._ktubePlayerMsgHandler = function(e) {
+      if (!e.data || typeof e.data !== 'object') return;
 
-      const errMode = e.data.mode || currentMode;
-      console.warn(`[renderWatch] player-error 受信: reason=${e.data.reason} mode=${errMode}`);
-
-      // api1-original2 なら再試行（ループ）
-      if (errMode === 'api1-original2') {
-        console.log('[renderWatch] api1-original2 を再試行（ループ）');
-        if (iframe) {
-          iframe.src = `/watch.html?id=${videoId}&mode=api1-prog&t=${Date.now()}`;
-        }
-        if (typeof showModeToast === 'function') {
-          showModeToast('「API1・オリジナル2」で再試行しています');
-        }
+      // ── モード変更通知（playwatch.js 内の自動フォールバック成功） ──
+      if (e.data.type === 'mode-changed') {
+        const newMode = e.data.mode;
+        if (!newMode) return;
+        console.log(`[renderWatch] mode-changed 受信: ${newMode}`);
+        currentMode = newMode;
+        if (playerSelect) playerSelect.value = newMode;
+        _errorHandled = false;
         return;
       }
 
-      // それ以外（api2-original1 / api2-original2 / api1-original1）→ api1-original2 に切り替え
-      _errorHandled = true;
-      currentMode = 'api1-original2';
-      if (playerSelect) playerSelect.value = 'api1-original2';
-      if (iframe) {
-        iframe.src = `/watch.html?id=${videoId}&mode=api1-prog&t=${Date.now()}`;
-      }
-      if (typeof showModeToast === 'function') {
-        showModeToast('埋め込みがブロックされたため「API1・オリジナル2」に切り替えました');
+      // ── プレイヤーエラー通知（googlevideo.com ブロック検知） ──
+      if (e.data.type === 'player-error') {
+        if (_errorHandled) return;
+        const errMode = e.data.mode || currentMode;
+        console.warn(`[renderWatch] player-error 受信: reason=${e.data.reason} mode=${errMode}`);
+
+        // api1-original2 なら再試行（ループ）
+        if (errMode === 'api1-original2') {
+          console.log('[renderWatch] api1-original2 を再試行（ループ）');
+          if (iframe) {
+            iframe.src = `/watch.html?id=${videoId}&mode=api1-prog&t=${Date.now()}`;
+          }
+          if (typeof window.showModeToast === 'function') {
+            window.showModeToast('「API1・オリジナル2」で再試行しています');
+          }
+          return;
+        }
+
+        // それ以外 → api1-original2 に切り替え
+        _errorHandled = true;
+        currentMode = 'api1-original2';
+        if (playerSelect) playerSelect.value = 'api1-original2';
+        if (iframe) {
+          iframe.src = `/watch.html?id=${videoId}&mode=api1-prog&t=${Date.now()}`;
+        }
+        if (typeof window.showModeToast === 'function') {
+          window.showModeToast('埋め込みがブロックされたため「API1・オリジナル2」に切り替えました');
+        }
+        return;
       }
     };
-    window.addEventListener('message', window._ktubePlayerErrorHandler);
+    window.addEventListener('message', window._ktubePlayerMsgHandler);
 
     if (playerSelect && iframe) {
       playerSelect.addEventListener('change', () => {
@@ -864,11 +879,12 @@ async function renderWatch(videoId) {
         }
         iframe.src = newSrc;
         currentMode = val;
-        _errorHandled = false; // 手動変更でエラーフラグをリセット
+        _errorHandled = false;
       });
     }
 
-    // ── ③ ダウンロードボタンも即時登録 ──
+
+   // ── ③ ダウンロードボタンも即時登録 ──
     const downloadBtn = document.getElementById('downloadMainBtn');
     if (downloadBtn) {
       downloadBtn.classList.remove('disabled');
@@ -1113,6 +1129,34 @@ async function renderWatch(videoId) {
     `;
   }
 }
+
+// ==================== トースト表示（main.js 用） ====================
+let _mainToastTimer = null;
+function showModeToast(message) {
+  let toast = document.getElementById("mode-toast-main");
+  if (toast) {
+    toast.remove();
+    if (_mainToastTimer) clearTimeout(_mainToastTimer);
+  }
+  toast = document.createElement("div");
+  toast.id = "mode-toast-main";
+  toast.className = "mode-toast";
+  toast.innerHTML = `
+    <span class="mode-toast-icon">🔄</span>
+    <span class="mode-toast-text">${message}</span>
+  `;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => toast.classList.add("show"));
+  });
+  _mainToastTimer = setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => {
+      if (toast.parentNode) toast.remove();
+    }, 400);
+  }, 4000);
+}
+window.showModeToast = showModeToast;
 
 function normalizeMetadata(data, source) {
   const ch = data.channel || {};
