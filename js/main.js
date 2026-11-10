@@ -314,7 +314,7 @@ function renderByHash() {
       if (typeof window.renderGamePlay === 'function') {
         window.renderGamePlay({ embedUrl: url, title: 'ゲーム' });
       } else {
-        // games.js がまだ読み込まれていない場合のフォールバック
+        // play.js がまだ読み込まれていない場合のフォールバック
         app.innerHTML = `
           <div class="play-fullscreen">
             <iframe src="${url}" frameborder="0" allowfullscreen></iframe>
@@ -1911,5 +1911,5 @@ function renderContact() {
 }
 
 
-import('./games.js').then(() => console.log('games.js loaded'));
+import('./play.js').then(() => console.log('play.js loaded'));
 import('./tools.js').then(() => console.log('tools.js loaded'));
