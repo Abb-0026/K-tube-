@@ -308,6 +308,35 @@ function renderByHash() {
     } else if (k === 'contact') {
       renderContact();
       toggleFixedSidebar(true);
+    } else if (k === 'playgame') {
+      // ── ゲームプレイ画面 ──
+      const url = decodeURIComponent(v || '');
+      if (typeof window.renderGamePlay === 'function') {
+        window.renderGamePlay({ embedUrl: url, title: 'ゲーム' });
+      } else {
+        // games.js がまだ読み込まれていない場合のフォールバック
+        app.innerHTML = `
+          <div class="play-fullscreen">
+            <iframe src="${url}" frameborder="0" allowfullscreen></iframe>
+          </div>
+        `;
+      }
+      document.body.classList.add('watch-page');
+      toggleFixedSidebar(false);
+    } else if (k === 'playtool') {
+      // ── ツールプレイ画面 ──
+      const url = decodeURIComponent(v || '');
+      if (typeof window.renderToolPlay === 'function') {
+        window.renderToolPlay({ embedUrl: url, title: 'ツール' });
+      } else {
+        app.innerHTML = `
+          <div class="play-fullscreen">
+            <iframe src="${url}" frameborder="0" allowfullscreen></iframe>
+          </div>
+        `;
+      }
+      document.body.classList.add('watch-page');
+      toggleFixedSidebar(false);
     } else {
       renderHome();
       toggleFixedSidebar(true);
