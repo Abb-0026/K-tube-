@@ -13,7 +13,6 @@ const errorEl = document.getElementById("error-message");
 let toastTimer = null;
 
 function showModeToast(message) {
-  // 既存トーストがあれば削除
   let toast = document.getElementById("mode-toast");
   if (toast) {
     toast.remove();
@@ -29,17 +28,15 @@ function showModeToast(message) {
   `;
   document.body.appendChild(toast);
 
-  // 次フレームで .show を付けてスライドイン
   requestAnimationFrame(() => {
     requestAnimationFrame(() => toast.classList.add("show"));
   });
 
-  // 4秒後にスライドアウトして削除
   toastTimer = setTimeout(() => {
     toast.classList.remove("show");
     setTimeout(() => {
       if (toast.parentNode) toast.remove();
-    }, 400); // トランジション時間と合わせる
+    }, 400);
   }, 4000);
 }
 
@@ -107,32 +104,60 @@ function filterApiList(apiList, mode) {
   return filtered;
 }
 
+// ==================== API.json キャッシュ（sessionStorage） ====================
+let _apiListCache = null;
+
 async function getApiList() {
+  if (_apiListCache) return _apiListCache;
+
+  try {
+    const cached = sessionStorage.getItem('ktube_api_list');
+    if (cached) {
+      _apiListCache = JSON.parse(cached);
+      return _apiListCache;
+    }
+  } catch (e) {}
+
   try {
     const res = await fetch('/API.json');
     if (!res.ok) throw new Error('API.json の読み込みに失敗');
-    return await res.json();
+    const list = await res.json();
+    _apiListCache = list;
+    try { sessionStorage.setItem('ktube_api_list', JSON.stringify(list)); } catch (e) {}
+    return list;
   } catch (err) {
     console.warn('API.json 読み込みエラー:', err);
     return ["https://splendid-jelly-e731bd.netlify.app/.netlify/functions"];
   }
 }
 
+// ==================== 最速APIで動画情報を取得（レース + 8秒タイムアウト） ====================
 async function fetchFastestApi(videoId, mode) {
   let apiList = await getApiList();
+
   if (!Array.isArray(apiList) || apiList.length === 0) {
     throw new Error('APIリストが空です');
   }
+
   apiList = filterApiList(apiList, mode);
 
   const requests = apiList.map(baseUrl => {
     const url = `${baseUrl}/video?v=${videoId}`;
-    return fetch(url)
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    return fetch(url, { signal: controller.signal })
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then(data => ({ data, source: baseUrl }));
+      .then(data => {
+        clearTimeout(timer);
+        return { data, source: baseUrl };
+      })
+      .catch(err => {
+        clearTimeout(timer);
+        throw err;
+      });
   });
 
   try {
@@ -160,16 +185,59 @@ function attachAudio(src) {
   audioEl.src = src;
 }
 
+// ==================== video/audio の読み込み完了 or 失敗を待つ ====================
+// 成功: canplay / loadeddata が来たら resolve
+// 失敗: error が来たら reject
+// タイムアウト: 指定msで resolve（= 一応再生できるとみなす）
+function waitForMediaReady(el, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    if (!el) return resolve();
+
+    let settled = false;
+    const cleanup = () => {
+      el.removeEventListener('canplay', onOk);
+      el.removeEventListener('loadeddata', onOk);
+      el.removeEventListener('error', onErr);
+      clearTimeout(timer);
+    };
+    const onOk = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const onErr = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('メディアの読み込みに失敗しました'));
+    };
+
+    el.addEventListener('canplay', onOk, { once: true });
+    el.addEventListener('loadeddata', onOk, { once: true });
+    el.addEventListener('error', onErr, { once: true });
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(); // タイムアウト時は成功扱い（再生できる可能性あり）
+    }, timeoutMs);
+  });
+}
+
 // ==================== 単一モードで動画を読み込む ====================
+// 成功したら return、失敗したら例外を投げる（呼び出し側で catch）
 async function tryLoadWithMode(targetMode) {
   let streamData;
 
-  // ── API1系 ──
+  // ── 1. API1系 ──
   if (targetMode === "api1-original1" || targetMode === "api1-original2") {
     const apiMode = targetMode === "api1-original1" ? "api1-high" : "api1-prog";
     const data = await fetchFastestApi(videoId, apiMode);
 
     if (targetMode === "api1-original1") {
+      // 高画質：adaptive video + audio を分離
       const videoFormat = data.adaptiveFormats?.find(f =>
         f.type?.includes("video/mp4") && (f.qualityLabel?.includes("720") || f.qualityLabel?.includes("1080"))
       ) || data.adaptiveFormats?.find(f => f.type?.includes("video/mp4"));
@@ -184,17 +252,24 @@ async function tryLoadWithMode(targetMode) {
       videoEl.src = videoFormat.url;
       attachAudio(audioFormat.url);
       syncVideoAudio();
+
+      // 読み込み完了 or 失敗を待つ（失敗なら次のモードへ）
+      await waitForMediaReady(videoEl, 10000);
     } else {
+      // api1-original2：音声込み（progressive）
       const prog = data.formatStreams?.find(f =>
         f.type?.includes("video/mp4") && (f.qualityLabel?.includes("360") || f.itag === 18)
       ) || data.formatStreams?.[0];
 
       if (!prog?.url) throw new Error("音声込みストリームが見つかりません");
+
       videoEl.src = prog.url;
       detachAudio();
+
+      await waitForMediaReady(videoEl, 10000);
     }
   }
-  // ── API2系 ──
+  // ── 2. API2系（yt-dlp） ──
   else if (targetMode === "api2-original1" || targetMode === "api2-original2") {
     const apiEndpoint = targetMode === "api2-original2" ? "/video360" : "/video";
     const res = await fetch(`${apiEndpoint}?id=${videoId}`);
@@ -213,17 +288,19 @@ async function tryLoadWithMode(targetMode) {
       } catch (e) {
         console.warn("localStorage保存失敗", e);
       }
+      await waitForMediaReady(videoEl, 10000);
     } else {
       if (!streamData.audio) throw new Error("音声URLが取得できません");
       attachAudio(`/proxy?url=${encodeURIComponent(streamData.audio)}`);
       syncVideoAudio();
+      await waitForMediaReady(videoEl, 10000);
     }
   }
-  // ── official ──
+  // ── 3. official ──
   else if (targetMode === "official") {
     throw new Error("official はこのプレイヤーでは直接再生できません");
   }
-  // ── default / 360 ──
+  // ── 4. default / 360 ──
   else {
     const apiEndpoint = targetMode === "360" ? "/video360" : "/video";
     const res = await fetch(`${apiEndpoint}?id=${videoId}`);
@@ -242,10 +319,12 @@ async function tryLoadWithMode(targetMode) {
       } catch (e) {
         console.warn("localStorage保存失敗", e);
       }
+      await waitForMediaReady(videoEl, 10000);
     } else {
       if (!streamData.audio) throw new Error("音声URLが取得できません");
       attachAudio(`/proxy?url=${encodeURIComponent(streamData.audio)}`);
       syncVideoAudio();
+      await waitForMediaReady(videoEl, 10000);
     }
   }
 }
