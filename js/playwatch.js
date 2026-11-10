@@ -9,6 +9,25 @@ const audioEl = document.getElementById("audio");
 const loadingEl = document.getElementById("loading");
 const errorEl = document.getElementById("error-message");
 
+// ==================== ストリームURL変換（issuer → ホスト差し替え） ====================
+function transformStreamUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+
+  try {
+    const u = new URL(url);
+    const issuer = u.searchParams.get('issuer');
+    if (!issuer) return url; // issuer なし → そのまま
+
+    u.searchParams.delete('issuer');
+
+    const newHost = issuer.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    return `https://${newHost}${u.pathname}${u.search}`;
+  } catch (e) {
+    console.warn('transformStreamUrl failed:', url, e);
+    return url;
+  }
+}
+
 // ==================== トースト表示 ====================
 let toastTimer = null;
 
@@ -186,9 +205,6 @@ function attachAudio(src) {
 }
 
 // ==================== video/audio の読み込み完了 or 失敗を待つ ====================
-// 成功: canplay / loadeddata が来たら resolve
-// 失敗: error が来たら reject
-// タイムアウト: 指定msで resolve（= 一応再生できるとみなす）
 function waitForMediaReady(el, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     if (!el) return resolve();
@@ -221,13 +237,12 @@ function waitForMediaReady(el, timeoutMs = 10000) {
       if (settled) return;
       settled = true;
       cleanup();
-      resolve(); // タイムアウト時は成功扱い（再生できる可能性あり）
+      resolve();
     }, timeoutMs);
   });
 }
 
 // ==================== 単一モードで動画を読み込む ====================
-// 成功したら return、失敗したら例外を投げる（呼び出し側で catch）
 async function tryLoadWithMode(targetMode) {
   let streamData;
 
@@ -237,7 +252,6 @@ async function tryLoadWithMode(targetMode) {
     const data = await fetchFastestApi(videoId, apiMode);
 
     if (targetMode === "api1-original1") {
-      // 高画質：adaptive video + audio を分離
       const videoFormat = data.adaptiveFormats?.find(f =>
         f.type?.includes("video/mp4") && (f.qualityLabel?.includes("720") || f.qualityLabel?.includes("1080"))
       ) || data.adaptiveFormats?.find(f => f.type?.includes("video/mp4"));
@@ -249,21 +263,19 @@ async function tryLoadWithMode(targetMode) {
       if (!videoFormat?.url) throw new Error("高画質ビデオストリームが見つかりません");
       if (!audioFormat?.url) throw new Error("音声ストリームが見つかりません");
 
-      videoEl.src = videoFormat.url;
-      attachAudio(audioFormat.url);
+      videoEl.src = transformStreamUrl(videoFormat.url);
+      attachAudio(transformStreamUrl(audioFormat.url));
       syncVideoAudio();
 
-      // 読み込み完了 or 失敗を待つ（失敗なら次のモードへ）
       await waitForMediaReady(videoEl, 10000);
     } else {
-      // api1-original2：音声込み（progressive）
       const prog = data.formatStreams?.find(f =>
         f.type?.includes("video/mp4") && (f.qualityLabel?.includes("360") || f.itag === 18)
       ) || data.formatStreams?.[0];
 
       if (!prog?.url) throw new Error("音声込みストリームが見つかりません");
 
-      videoEl.src = prog.url;
+      videoEl.src = transformStreamUrl(prog.url);
       detachAudio();
 
       await waitForMediaReady(videoEl, 10000);
@@ -278,7 +290,8 @@ async function tryLoadWithMode(targetMode) {
 
     if (!streamData.video) throw new Error("動画URLが取得できません");
 
-    videoEl.src = `/proxy?url=${encodeURIComponent(streamData.video)}`;
+    const transformedVideo = transformStreamUrl(streamData.video);
+    videoEl.src = `/proxy?url=${encodeURIComponent(transformedVideo)}`;
 
     if (targetMode === "api2-original2") {
       detachAudio();
@@ -291,7 +304,8 @@ async function tryLoadWithMode(targetMode) {
       await waitForMediaReady(videoEl, 10000);
     } else {
       if (!streamData.audio) throw new Error("音声URLが取得できません");
-      attachAudio(`/proxy?url=${encodeURIComponent(streamData.audio)}`);
+      const transformedAudio = transformStreamUrl(streamData.audio);
+      attachAudio(`/proxy?url=${encodeURIComponent(transformedAudio)}`);
       syncVideoAudio();
       await waitForMediaReady(videoEl, 10000);
     }
@@ -309,7 +323,8 @@ async function tryLoadWithMode(targetMode) {
 
     if (!streamData.video) throw new Error("動画URLが取得できません");
 
-    videoEl.src = `/proxy?url=${encodeURIComponent(streamData.video)}`;
+    const transformedVideo = transformStreamUrl(streamData.video);
+    videoEl.src = `/proxy?url=${encodeURIComponent(transformedVideo)}`;
 
     if (targetMode === "360") {
       detachAudio();
@@ -322,7 +337,8 @@ async function tryLoadWithMode(targetMode) {
       await waitForMediaReady(videoEl, 10000);
     } else {
       if (!streamData.audio) throw new Error("音声URLが取得できません");
-      attachAudio(`/proxy?url=${encodeURIComponent(streamData.audio)}`);
+      const transformedAudio = transformStreamUrl(streamData.audio);
+      attachAudio(`/proxy?url=${encodeURIComponent(transformedAudio)}`);
       syncVideoAudio();
       await waitForMediaReady(videoEl, 10000);
     }
@@ -349,7 +365,6 @@ async function loadVideoWithFallback() {
       console.log(`[playwatch] 成功: ${targetMode}`);
       if (loadingEl) loadingEl.style.display = "none";
 
-      // ── 親ウィンドウに「どのモードで成功したか」を通知 ──
       try {
         if (window.parent && window.parent !== window) {
           window.parent.postMessage({
@@ -362,7 +377,6 @@ async function loadVideoWithFallback() {
         console.warn('postMessage failed', e);
       }
 
-      // 最初のモードと違うモードで成功した場合のみトースト表示
       if (targetMode !== originalMode) {
         showModeToast(
           `再生方法を「${modeLabel(targetMode)}」に切り替えました`
