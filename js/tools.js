@@ -1,3 +1,4 @@
+
 // js/tools.js
 
 async function loadTools() {
@@ -10,14 +11,18 @@ async function loadTools() {
     const data = await res.json();
     const tools = data.tools || [];
 
-    grid.innerHTML = '';
+    const frag = document.createDocumentFragment();
 
-    tools.forEach(tool => {
+    for (const tool of tools) {
       const card = document.createElement('div');
       card.className = 'card';
       card.innerHTML = `
         <div class="thumb" data-tool="${tool.embedUrl}">
-          <img src="${tool.thumbnail}" alt="${tool.title}" style="aspect-ratio:16/9; object-fit:cover;">
+          <img src="${tool.thumbnail}"
+               alt="${escapeHtml(tool.title)}"
+               loading="lazy"
+               decoding="async"
+               style="aspect-ratio:16/9; object-fit:cover;">
         </div>
         <div class="meta">
           <div class="info">
@@ -29,11 +34,13 @@ async function loadTools() {
 
       card.querySelector('.thumb').addEventListener('click', () => {
         location.hash = `playtool=${encodeURIComponent(tool.embedUrl)}`;
-        renderToolPlay(tool);
       });
 
-      grid.appendChild(card);
-    });
+      frag.appendChild(card);
+    }
+
+    grid.innerHTML = '';
+    grid.appendChild(frag);
   } catch (err) {
     console.error('ツール一覧読み込みエラー:', err);
     grid.innerHTML = `<div style="color:#c00;padding:40px;text-align:center;">ツール一覧の読み込みに失敗しました</div>`;
