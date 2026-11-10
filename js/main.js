@@ -1,6 +1,5 @@
 const PIPED_API_BASE = '/piped';
 const INVIDIOUS_API_BASE = '/invidious'
-const K-tube_API_BASE = '/api'
 
 const MAX_RESULTS = 12;
 const el = id => document.getElementById(id);
