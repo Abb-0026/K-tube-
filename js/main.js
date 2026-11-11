@@ -505,6 +505,18 @@ function makeVideoCard(item) {
   `;
 
   div.querySelector('.thumb').addEventListener('click', () => {
+    // カード情報を一時保存（再生ページの即時表示用）
+    try {
+      sessionStorage.setItem('ktube_pending_watch', JSON.stringify({
+        videoId: vid,
+        title,
+        thumbnail: th,
+        channelName: chTitle,
+        channelId: chId,
+        views,
+        publishedAt
+      }));
+    } catch (e) {}
     location.hash = `watch=${vid}`;
   });
 
@@ -741,14 +753,28 @@ async function fetchFastestNetlify(videoId) {
 
 
 // =============================================
-// 再生ページ（超高速化版）
+// 再生ページ（超高速化版 + カード情報の即時表示）
 // =============================================
 async function renderWatch(videoId) {
   try {
     observerMap.forEach(o => o.disconnect());
     observerMap.clear();
 
-    // ── ① 骨組みを即描画 ──
+    // ── ⓪ カードからの遷移情報を取得（即時表示用） ──
+    let pending = null;
+    try {
+      const raw = sessionStorage.getItem('ktube_pending_watch');
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p && p.videoId === videoId) {
+          pending = p;
+        }
+        // 使い捨て
+        sessionStorage.removeItem('ktube_pending_watch');
+      }
+    } catch (e) {}
+
+    // ── ① 骨組みを即描画（pending があればタイトル等を先に埋める） ──
     const defaultPlayer = localStorage.getItem('defaultPlayer') || 'api2-original2';
 
     let initialSrc = `https://www.youtube.com/embed/${videoId}?rel=0`;
@@ -776,6 +802,14 @@ async function renderWatch(videoId) {
         break;
     }
 
+    // pending があれば先に表示する値
+    const initTitle = pending?.title || '読み込み中...';
+    const initChName = pending?.channelName || '---';
+    const initChId = pending?.channelId || '';
+    const initChThumb = pending?.channelId ? '' : '';
+    const initViews = (pending && pending.views != null) ? `${fmtNum(pending.views)} 回視聴` : '--- 回視聴';
+    const initUploaded = (pending && pending.publishedAt) ? timeAgo(pending.publishedAt) : '---';
+
     app.innerHTML = `
       <div class="watch-container">
         <div class="main-col">
@@ -789,11 +823,11 @@ async function renderWatch(videoId) {
             </iframe>
           </div>
           <div class="player-meta">
-            <h1 id="watchTitle">読み込み中...</h1>
+            <h1 id="watchTitle">${escapeHtml(initTitle)}</h1>
             <div class="stats" id="watchStats">
-              <div id="watchViews">--- 回視聴</div>
+              <div id="watchViews">${initViews}</div>
               <div>・</div>
-              <div id="watchUploaded">---</div>
+              <div id="watchUploaded">${initUploaded}</div>
               <div style="margin-left:auto;font-weight:700" id="watchLikes">--- 👍</div>
               <select id="playerSelect">
                 <option value="official" ${selectedValue === 'official' ? 'selected' : ''}>公式プレイヤー（YouTube埋め込み）</option>
@@ -804,10 +838,10 @@ async function renderWatch(videoId) {
               </select>
             </div>
             <div class="channel-row">
-              <img id="watchChThumb" src="" alt="" onerror="this.src='https://via.placeholder.com/48?text=Ch'" style="width:48px;height:48px;border-radius:50%;object-fit:cover;background:#eee;">
+              <img id="watchChThumb" src="${initChThumb}" alt="" onerror="this.src='https://via.placeholder.com/48?text=Ch'" style="width:48px;height:48px;border-radius:50%;object-fit:cover;background:#eee;">
               <div class="ch-info">
                 <div style="font-weight:700">
-                  <a id="watchChLink" href="#" class="watch-ch-link" style="text-decoration:none;color:inherit">---</a>
+                  <a id="watchChLink" href="${initChId ? `#channel=${initChId}` : '#'}" class="watch-ch-link" style="text-decoration:none;color:inherit">${escapeHtml(initChName)}</a>
                 </div>
                 <div style="color:#606060;font-size:13px" id="watchChSubs">--- 人の登録者</div>
               </div>
@@ -855,13 +889,12 @@ async function renderWatch(videoId) {
         iframe.src = newSrc;
       });
 
-      // ── ここを追加：playwatch.js からの自動切り替え通知を受信 ──
+      // ── playwatch.js からの自動切り替え通知を受信 ──
       const onPlayerModeMessage = (e) => {
         if (!e.data || e.data.type !== 'ktube-player-mode-changed') return;
         if (e.data.videoId !== videoId) return; // 別動画のメッセージは無視
 
         const newMode = e.data.mode;
-        // playerSelect に該当する option があれば選択状態を更新
         const hasOption = [...playerSelect.options].some(o => o.value === newMode);
         if (hasOption) {
           playerSelect.value = newMode;
@@ -869,7 +902,6 @@ async function renderWatch(videoId) {
         }
       };
 
-      // 既存のリスナーがあれば外す（renderWatch が複数回呼ばれる対策）
       if (window.__ktubePlayerModeHandler) {
         window.removeEventListener('message', window.__ktubePlayerModeHandler);
       }
@@ -926,14 +958,16 @@ async function renderWatch(videoId) {
     const rawMeta = await fetchFastestNetlify(videoId).catch(() => null);
     const metaData = normalizeMetadata(rawMeta || {}, 'K-tube API (race)');
 
-    const title = metaData.title || `動画（ID: ${videoId}）`;
-    const views = fmtNum(metaData.viewCount ?? metaData.views ?? 0);
+    const title = metaData.title || pending?.title || `動画（ID: ${videoId}）`;
+    const views = fmtNum(metaData.viewCount ?? metaData.views ?? pending?.views ?? 0);
     const likes = fmtNum(metaData.likeCount ?? 0);
     let uploaded = '---';
     if (metaData.published || metaData.uploadDate || metaData.uploaded) {
       try {
         uploaded = timeAgo(new Date(metaData.published || metaData.uploadDate || metaData.uploaded).toISOString());
       } catch {}
+    } else if (pending?.publishedAt) {
+      uploaded = timeAgo(pending.publishedAt);
     }
 
     const titleEl = document.getElementById('watchTitle');
@@ -980,8 +1014,8 @@ async function renderWatch(videoId) {
     }, 0);
 
     // ── ⑥ チャンネル情報（仮表示 → 後から埋める） ──
-    let chName = metaData.uploader || metaData.author || metaData.channelName || metaData.uploaderName || '不明';
-    let chId = metaData.channelId || metaData.authorId || (metaData.uploaderUrl?.split('/').pop() || '');
+    let chName = metaData.uploader || metaData.author || metaData.channelName || metaData.uploaderName || pending?.channelName || '不明';
+    let chId = metaData.channelId || metaData.authorId || (metaData.uploaderUrl?.split('/').pop() || '') || pending?.channelId || '';
     let chThumb = toYt3Avatar(metaData.uploaderAvatar || metaData.avatar || '', 88);
     let subscriberCount = metaData.subscriberCount ?? 0;
 
@@ -1033,8 +1067,8 @@ async function renderWatch(videoId) {
     }
 
     // 履歴追加
-    if (metaData.title) {
-      addToHistory(videoId, metaData.title, metaData.thumbnail || '', chName, metaData.uploaderUrl || (chId ? `/channel/${chId}` : ''));
+    if (title) {
+      addToHistory(videoId, title, metaData.thumbnail || pending?.thumbnail || '', chName, metaData.uploaderUrl || (chId ? `/channel/${chId}` : ''));
     }
 
     // ── ⑦ 関連動画を非同期取得 ──
@@ -1042,7 +1076,7 @@ async function renderWatch(videoId) {
       (async () => {
         try {
           let items = [];
-          let searchQuery = metaData.title || videoId;
+          let searchQuery = metaData.title || title || videoId;
           if (metaData.uploader || metaData.uploaderName) {
             searchQuery += ' ' + (metaData.uploader || metaData.uploaderName);
           }
@@ -1057,7 +1091,7 @@ async function renderWatch(videoId) {
           });
 
           if (items.length < 6) {
-            const fallback = await pipedFetch('/search', { q: metaData.title || videoId });
+            const fallback = await pipedFetch('/search', { q: metaData.title || title || videoId });
             let more = Array.isArray(fallback) ? fallback :
                        (fallback?.items || fallback?.results || fallback?.videos || []);
             more = more.filter(item => {
@@ -1095,7 +1129,20 @@ async function renderWatch(videoId) {
                   </div>
                 </div>
               `;
-              div.addEventListener('click', () => location.hash = `watch=${relVid}`);
+              div.addEventListener('click', () => {
+                try {
+                  sessionStorage.setItem('ktube_pending_watch', JSON.stringify({
+                    videoId: relVid,
+                    title: item.title || '',
+                    thumbnail: thumb,
+                    channelName: item.uploaderName || item.uploader || '',
+                    channelId: item.uploaderUrl?.split('/').pop() || '',
+                    views: item.views ?? null,
+                    publishedAt: item.uploaded || item.uploadedDate || null
+                  }));
+                } catch (e) {}
+                location.hash = `watch=${relVid}`;
+              });
               relatedList.appendChild(div);
             });
           } else {
@@ -1498,6 +1545,18 @@ function renderHistory() {
     `;
 
     card.querySelector('.thumb').addEventListener('click', () => {
+      // 履歴カードから取れる情報を保存
+      try {
+        sessionStorage.setItem('ktube_pending_watch', JSON.stringify({
+          videoId: item.videoId,
+          title: item.title || '',
+          thumbnail: item.thumbnail || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
+          channelName: item.uploaderName || '',
+          channelId: item.uploaderUrl?.split('/').pop() || '',
+          views: null,
+          publishedAt: null
+        }));
+      } catch (e) {}
       location.hash = `watch=${item.videoId}`;
     });
 
