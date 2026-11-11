@@ -507,12 +507,21 @@ function makeVideoCard(item) {
   div.querySelector('.thumb').addEventListener('click', () => {
     // カード情報を一時保存（再生ページの即時表示用）
     try {
+      // チャンネルアイコンは fillChannelThumbs で後埋めされるので、
+      // クリック時点の img.src を読む（空ならキャッシュから）
+      const thumbImg = div.querySelector('.channel-thumb img');
+      let channelThumb = thumbImg?.src || '';
+      if (!channelThumb && chId && channelThumbCache[chId]) {
+        channelThumb = channelThumbCache[chId];
+      }
+
       sessionStorage.setItem('ktube_pending_watch', JSON.stringify({
         videoId: vid,
         title,
         thumbnail: th,
         channelName: chTitle,
         channelId: chId,
+        channelThumb: channelThumb || '',
         views,
         publishedAt
       }));
@@ -806,7 +815,7 @@ async function renderWatch(videoId) {
     const initTitle = pending?.title || '読み込み中...';
     const initChName = pending?.channelName || '---';
     const initChId = pending?.channelId || '';
-    const initChThumb = pending?.channelId ? '' : '';
+    const initChThumb = pending?.channelThumb || '';
     const initViews = (pending && pending.views != null) ? `${fmtNum(pending.views)} 回視聴` : '--- 回視聴';
     const initUploaded = (pending && pending.publishedAt) ? timeAgo(pending.publishedAt) : '---';
 
@@ -1137,6 +1146,7 @@ async function renderWatch(videoId) {
                     thumbnail: thumb,
                     channelName: item.uploaderName || item.uploader || '',
                     channelId: item.uploaderUrl?.split('/').pop() || '',
+                    channelThumb: '',
                     views: item.views ?? null,
                     publishedAt: item.uploaded || item.uploadedDate || null
                   }));
@@ -1545,7 +1555,7 @@ function renderHistory() {
     `;
 
     card.querySelector('.thumb').addEventListener('click', () => {
-      // 履歴カードから取れる情報を保存
+      // 履歴カードから取れる情報を保存（チャンネルアイコンは無いので空）
       try {
         sessionStorage.setItem('ktube_pending_watch', JSON.stringify({
           videoId: item.videoId,
@@ -1553,6 +1563,7 @@ function renderHistory() {
           thumbnail: item.thumbnail || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`,
           channelName: item.uploaderName || '',
           channelId: item.uploaderUrl?.split('/').pop() || '',
+          channelThumb: '',
           views: null,
           publishedAt: null
         }));
