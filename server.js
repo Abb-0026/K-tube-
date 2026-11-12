@@ -234,17 +234,68 @@ app.get('/api/v2/video', async (req, res) => {
   const videoId = req.query.v;
   if (!videoId) return res.status(400).json({ error: "video id required" });
 
-  const invidiousInstances = [
-    "https://nyc1.iv.ggtyler.dev",
-    "https://invid-api.poketube.fun",
-    "https://cal1.iv.ggtyler.dev",
-    "https://invidious.nikkosphere.com",
-    "https://lekker.gay",
-    "https://invidious.f5.si",
-    "https://invidious.lunivers.trade"
-    
+ 
+const pipedInstances = [
+  'https://api.piped.private.coffee',
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.tokhmi.xyz'
+  'https://api.piped.private.coffee',
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.tokhmi.xyz',
+  'https://pipedapi.syncpundit.io',
+  'https://api-piped.mha.fi',
+  'https://piped-api.garudalinux.org',
+  'https://pipedapi.rivo.lol',
+  'https://pipedapi.leptons.xyz',
+  'https://piped-api.lunar.icu',
+  'https://ytapi.dc09.ru',
+  'https://pipedapi.colinslegacy.com',
+  'https://yapi.vyper.me',
+  'https://api.looleh.xyz',
+  'https://piped-api.cfe.re',
+  'https://pipedapi.r4fo.com',
+  'https://pipedapi.nosebs.ru',
+  'https://pipedapi-libre.kavin.rocks',
+  'https://pa.mint.lgbt',
+  'https://pa.il.ax',
+  'https://piped-api.privacy.com.de',
+  'https://api.piped.projectsegfau.lt',
+  'https://pipedapi.in.projectsegfau.lt',
+  'https://pipedapi.us.projectsegfau.lt',
+  'https://api.piped.privacydev.net',
+  'https://pipedapi.palveluntarjoaja.eu',
+  'https://pipedapi.smnz.de',
+  'https://pipedapi.adminforge.de',
+  'https://pipedapi.qdi.fi',
+  'https://piped-api.hostux.net',
+  'https://pdapi.vern.cc',
+  'https://pipedapi.pfcd.me',
+  'https://pipedapi.frontendfriendly.xyz',
+  'https://api.piped.yt',
+  'https://pipedapi.astartes.nl',
+  'https://pipedapi.osphost.fi',
+  'https://pipedapi.simpleprivacy.fr',
+  'https://pipedapi.drgns.space',
+  'https://piapi.ggtyler.dev',
+  'https://api.watch.pluto.lat',
+  'https://piped-backend.seitan-ayoub.lol',
+  'https://pipedapi.owo.si',
+  'https://api.piped.minionflo.net',
+  'https://pipedapi.nezumi.party',
+  'https://pipedapi.ducks.party',
+  'https://pipedapi.ngn.tf',
+  'https://pipedapi.coldforge.xyz',
+  'https://piped-api.codespace.cz',
+  'https://pipedapi.reallyaweso.me',
+  'https://pipedapi.phoenixthrush.com',
+  'https://schaunapi.ehwurscht.at',
+  'https://pipedapi.darkness.services',
+  'https://pipedapi.andreafortuna.org',
+  'https://nyc1.iv.ggtyler.dev',
+  'https://invid-api.poketube.fun
   ];
 
+  
   for (const base of invidiousInstances) {
     try {
       const url = `${base}/api/v1/videos/${videoId}`;
