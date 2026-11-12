@@ -230,15 +230,8 @@ https://youtu.be/${videoId}`
 
 
 
-app.get('/api/v2/video', async (req, res) => {
-  const videoId = req.query.v;
-  if (!videoId) return res.status(400).json({ error: "video id required" });
-
- 
+// ====================== /api/v2/video（修正版） ======================
 const pipedInstances = [
-  'https://api.piped.private.coffee',
-  'https://pipedapi.kavin.rocks',
-  'https://pipedapi.tokhmi.xyz'
   'https://api.piped.private.coffee',
   'https://pipedapi.kavin.rocks',
   'https://pipedapi.tokhmi.xyz',
@@ -292,50 +285,193 @@ const pipedInstances = [
   'https://pipedapi.darkness.services',
   'https://pipedapi.andreafortuna.org',
   'https://nyc1.iv.ggtyler.dev',
-  'https://invid-api.poketube.fun
-  ];
+];
 
-  
-  for (const base of invidiousInstances) {
-    try {
-      const url = `${base}/api/v1/videos/${videoId}`;
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; K-tube/1.0)' }
-      });
+const invidiousInstances = [
+  'https://invid-api.poketube.fun',
+  'https://nyc1.iv.ggtyler.dev',
+  'https://cal1.iv.ggtyler.dev',
+  'https://invidious.nikkosphere.com',
+  'https://lekker.gay',
+  'https://invidious.f5.si',
+  'https://inv.nadeko.net',
+  'https://invidious.ritoge.com',
+  'https://invidious.ducks.party',
+  'https://super8.absturztau.be',
+  'https://invidious.darkness.services',
+  'https://yt.omada.cafe',
+  'https://iv.melmac.space',
+  'https://iv.duti.dev',
+  'https://invidious.tiekoetter.com',
+  'https://iv.ggtyler.dev',
+  'https://invidious.perennialte.ch',
+  'https://invidious.jing.rocks',
+  'https://yewtu.be',
+  'https://invidious.private.coffee',
+  'https://invidious.slipfox.xyz',
+  'https://invidious.protokolla.fi',
+  'https://inv.tux.pizza',
+  'https://invidious.lunar.icu',
+  'https://invidious.no-logs.com',
+  'https://invidious.zapashcanon.fr',
+  'https://invidious.dhusch.de',
+  'https://invidious.reallyaweso.me',
+  'https://invidious.kavin.rocks',
+  'https://vid.puffyan.us',
+  'https://invidious.xyz',
+  'https://inv.zzls.xyz',
+  'https://invidious.fdn.fr',
+  'https://invidious.flokinet.to',
+  'https://invidious.materialio.us',
+  'https://iv.catgirl.cloud',
+  'https://inv.kamuridesu.com',
+  'https://inv.thepixora.com',
+  'https://inv.eu.projectsegfau.lt',
+  'https://inv.bp.projectsegfau.lt',
+  'https://inv.perditum.com',
+  'https://iteroni.com',
+  'https://inv.jp.projectsegfau.lt',
+  'https://inv.sg.projectsegfau.lt',
+  'https://inv.ca.projectsegfau.lt',
+  'https://inv.de.projectsegfau.lt',
+  'https://usa-proxy2.poketube.fun',
+  'https://invidious.nietzospannend.nl',
+  'https://inv7.nadeko.net',
+  'https://inv6.nadeko.net',
+  'https://inv8.nadeko.net',
+  'https://inv9.nadeko.net',
+  'https://invidious.io.lol',
+  'https://cuddly.tube',
+  'https://invidious.einfachzocken.eu',
+  'https://y.com.sb',
+  'https://invidious.epicsite.xyz',
+  'https://inv1.nadeko.net',
+  'https://inv2.nadeko.net',
+  'https://inv3.nadeko.net',
+  'https://inv4.nadeko.net',
+  'https://inv5.nadeko.net',
+  'https://yt.cdsp.cz',
+  'https://invidious.projectsegfau.lt',
+  'https://invidious.domain.glass',
+  'https://clips.im.allmendenetz.de',
+  'https://i.oyster.men',
+  'https://youtube.vpn-home-net.de',
+  'https://toob.unternet.org',
+  'https://inv.antopie.org',
+  'https://invidious.weblibre.org',
+  'https://inv.in.projectsegfau.lt',
+  'https://invidious-us.kavin.rocks',
+  'https://invidious.zee.li',
+  'https://tube.connect.cafe',
+  'https://invidious.privacy.gd',
+  'https://eu-proxy.poketube.fun',
+  'https://inv.riverside.rocks',
+  'https://invidious.site',
+  'https://yt.artemislena.eu',
+  'https://invidious.chunboan.zone',
+  'https://invidious.vpsburti.com',
+  'https://youtube.notrack.ch',
+  'https://invidious.poast.org',
+  'https://invidious.drivet.xyz',
+  'https://video.weiler.rocks',
+  'https://yt.beparanoid.de',
+  'https://youtube.it-service-schopfheim.de',
+  'https://monocles.live',
+  'https://inv.us.projectsegfau.lt',
+  'https://invidious.rndsh.it',
+  'https://invidious.pussthecat.org',
+  'https://youtube.lurkmore.com',
+  'https://invidious.palejev.dscloud.me',
+  'https://invidious.zecircle.xyz',
+  'https://inv.owo.si',
+  'https://inv.pistasjis.net',
+  'https://invidious.qwik.space',
+  'https://hyperpipe.surge.sh',
+  'https://inv.frail.duckdns.org',
+  'https://invidious.notraxx.ch',
+  'https://youtube.mosesmang.com',
+  'https://inv.zoomerville.com',
+  'https://id.420129.xyz',
+  'https://invidious.0011.lt',
+  'https://invidious.adminforge.de',
+  'https://invidious.esmailelbob.xyz',
+  'https://invidious.lunivers.trade',
+  'https://iv.datura.network',
+  'https://pol1.iv.ggtyler.dev',
+  'https://invidious.drgns.space',
+  'https://invidious.mutahar.rocks',
+  'https://invidious.privacyredirect.com',
+  'https://invidious.catspeed.cc',
+  'https://youtube.076.ne.jp',
+];
 
-      if (!response.ok) continue;
+// 重複除去 + 先頭N件に絞る
+const UNIQUE_PIPED = [...new Set(pipedInstances)];
+const UNIQUE_INVIDIOUS = [...new Set(invidiousInstances)];
+const MAX_PIPED = 20;
+const MAX_INVIDIOUS = 20;
+const API_TIMEOUT = 6000;
 
-      const data = await response.json();
+app.get('/api/v2/video', async (req, res) => {
+  const videoId = req.query.v;
+  if (!videoId) return res.status(400).json({ error: "video id required" });
 
-      // 必要なフィールドだけ整形して返す（フロントと合わせる）
+  // ── Piped と Invidious を並列で叩き、最速応答を返す ──
+  const pipedTasks = UNIQUE_PIPED.slice(0, MAX_PIPED).map(async (base) => {
+    const url = `${base}/streams/${videoId}`;
+    const r = await fetch(url, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(API_TIMEOUT)
+    });
+    if (!r.ok) throw new Error(`Piped ${base} → ${r.status}`);
+    return { source: 'piped', base, data: await r.json() };
+  });
+
+  const invTasks = UNIQUE_INVIDIOUS.slice(0, MAX_INVIDIOUS).map(async (base) => {
+    const url = `${base}/api/v1/videos/${videoId}`;
+    const r = await fetch(url, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; K-tube/1.0)' },
+      signal: AbortSignal.timeout(API_TIMEOUT)
+    });
+    if (!r.ok) throw new Error(`Invidious ${base} → ${r.status}`);
+    const data = await r.json();
+    return { source: 'invidious', base, data };
+  });
+
+  try {
+    const winner = await Promise.any([...pipedTasks, ...invTasks]);
+    const data = winner.data;
+
+    // ── Invidious 形式を Piped 形式に正規化 ──
+    if (winner.source === 'invidious') {
       const result = {
         title: data.title || "不明",
         description: data.description || "",
         viewCount: data.viewCount || 0,
         likeCount: data.likeCount || 0,
-        published: data.published 
-          ? new Date(data.published * 1000).toISOString() 
+        published: data.published
+          ? new Date(data.published * 1000).toISOString()
           : null,
         uploader: data.author || "不明",
         uploaderUrl: `/channel/${data.authorId || ""}`,
-        uploaderAvatar: data.authorThumbnails?.[data.authorThumbnails.length-1]?.url || "",
-        thumbnail: data.videoThumbnails?.find(t => t.quality === "maxres")?.url 
-                 || data.videoThumbnails?.[0]?.url || "",
+        uploaderAvatar: data.authorThumbnails?.[data.authorThumbnails.length - 1]?.url || "",
+        thumbnail: data.videoThumbnails?.find(t => t.quality === "maxres")?.url
+          || data.videoThumbnails?.[0]?.url || "",
         lengthSeconds: data.lengthSeconds || 0,
-        // 再生用ストリーム（高画質adaptive + 音声込みprogressive）
         adaptiveFormats: data.adaptiveFormats || [],
-        formatStreams: data.formatStreams || [],     // ← ここに360pなどが入る
-        relatedStreams: data.recommendedVideos || [] // 関連動画も取れる
+        formatStreams: data.formatStreams || [],
+        relatedStreams: data.recommendedVideos || []
       };
-
       return res.json(result);
-    } catch (err) {
-      console.warn(`Invidious ${base} failed:`, err.message);
-      // 次を試す
     }
-  }
 
-  res.status(503).json({ error: "All Invidious instances failed" });
+    // Piped はそのまま返す
+    return res.json(data);
+
+  } catch (e) {
+    console.error('/api/v2/video all failed:', e.message);
+    res.status(503).json({ error: "All Piped/Invidious instances failed" });
+  }
 });
 
 // プロキシ（動画チャンク配信用）
@@ -462,7 +598,57 @@ app.get("/proxy-hls", async (req, res) => {
 const pipedInstances = [
   'https://api.piped.private.coffee',
   'https://pipedapi.kavin.rocks',
-  'https://pipedapi.tokhmi.xyz'
+  'https://pipedapi.tokhmi.xyz',
+  'https://pipedapi.syncpundit.io',
+  'https://api-piped.mha.fi',
+  'https://piped-api.garudalinux.org',
+  'https://pipedapi.rivo.lol',
+  'https://pipedapi.leptons.xyz',
+  'https://piped-api.lunar.icu',
+  'https://ytapi.dc09.ru',
+  'https://pipedapi.colinslegacy.com',
+  'https://yapi.vyper.me',
+  'https://api.looleh.xyz',
+  'https://piped-api.cfe.re',
+  'https://pipedapi.r4fo.com',
+  'https://pipedapi.nosebs.ru',
+  'https://pipedapi-libre.kavin.rocks',
+  'https://pa.mint.lgbt',
+  'https://pa.il.ax',
+  'https://piped-api.privacy.com.de',
+  'https://api.piped.projectsegfau.lt',
+  'https://pipedapi.in.projectsegfau.lt',
+  'https://pipedapi.us.projectsegfau.lt',
+  'https://api.piped.privacydev.net',
+  'https://pipedapi.palveluntarjoaja.eu',
+  'https://pipedapi.smnz.de',
+  'https://pipedapi.adminforge.de',
+  'https://pipedapi.qdi.fi',
+  'https://piped-api.hostux.net',
+  'https://pdapi.vern.cc',
+  'https://pipedapi.pfcd.me',
+  'https://pipedapi.frontendfriendly.xyz',
+  'https://api.piped.yt',
+  'https://pipedapi.astartes.nl',
+  'https://pipedapi.osphost.fi',
+  'https://pipedapi.simpleprivacy.fr',
+  'https://pipedapi.drgns.space',
+  'https://piapi.ggtyler.dev',
+  'https://api.watch.pluto.lat',
+  'https://piped-backend.seitan-ayoub.lol',
+  'https://pipedapi.owo.si',
+  'https://api.piped.minionflo.net',
+  'https://pipedapi.nezumi.party',
+  'https://pipedapi.ducks.party',
+  'https://pipedapi.ngn.tf',
+  'https://pipedapi.coldforge.xyz',
+  'https://piped-api.codespace.cz',
+  'https://pipedapi.reallyaweso.me',
+  'https://pipedapi.phoenixthrush.com',
+  'https://schaunapi.ehwurscht.at',
+  'https://pipedapi.darkness.services',
+  'https://pipedapi.andreafortuna.org',
+  'https://nyc1.iv.ggtyler.dev',
 ];
 
 app.get('/piped/*', async (req, res) => {
