@@ -594,68 +594,13 @@ app.get("/proxy-hls", async (req, res) => {
   }
 });
 
-// Piped API プロキシ
-const pipedInstances = [
-  'https://api.piped.private.coffee',
-  'https://pipedapi.kavin.rocks',
-  'https://pipedapi.tokhmi.xyz',
-  'https://pipedapi.syncpundit.io',
-  'https://api-piped.mha.fi',
-  'https://piped-api.garudalinux.org',
-  'https://pipedapi.rivo.lol',
-  'https://pipedapi.leptons.xyz',
-  'https://piped-api.lunar.icu',
-  'https://ytapi.dc09.ru',
-  'https://pipedapi.colinslegacy.com',
-  'https://yapi.vyper.me',
-  'https://api.looleh.xyz',
-  'https://piped-api.cfe.re',
-  'https://pipedapi.r4fo.com',
-  'https://pipedapi.nosebs.ru',
-  'https://pipedapi-libre.kavin.rocks',
-  'https://pa.mint.lgbt',
-  'https://pa.il.ax',
-  'https://piped-api.privacy.com.de',
-  'https://api.piped.projectsegfau.lt',
-  'https://pipedapi.in.projectsegfau.lt',
-  'https://pipedapi.us.projectsegfau.lt',
-  'https://api.piped.privacydev.net',
-  'https://pipedapi.palveluntarjoaja.eu',
-  'https://pipedapi.smnz.de',
-  'https://pipedapi.adminforge.de',
-  'https://pipedapi.qdi.fi',
-  'https://piped-api.hostux.net',
-  'https://pdapi.vern.cc',
-  'https://pipedapi.pfcd.me',
-  'https://pipedapi.frontendfriendly.xyz',
-  'https://api.piped.yt',
-  'https://pipedapi.astartes.nl',
-  'https://pipedapi.osphost.fi',
-  'https://pipedapi.simpleprivacy.fr',
-  'https://pipedapi.drgns.space',
-  'https://piapi.ggtyler.dev',
-  'https://api.watch.pluto.lat',
-  'https://piped-backend.seitan-ayoub.lol',
-  'https://pipedapi.owo.si',
-  'https://api.piped.minionflo.net',
-  'https://pipedapi.nezumi.party',
-  'https://pipedapi.ducks.party',
-  'https://pipedapi.ngn.tf',
-  'https://pipedapi.coldforge.xyz',
-  'https://piped-api.codespace.cz',
-  'https://pipedapi.reallyaweso.me',
-  'https://pipedapi.phoenixthrush.com',
-  'https://schaunapi.ehwurscht.at',
-  'https://pipedapi.darkness.services',
-  'https://pipedapi.andreafortuna.org',
-  'https://nyc1.iv.ggtyler.dev',
-];
+
 
 app.get('/piped/*', async (req, res) => {
   const path = req.path.replace('/piped', '');
   const query = new URLSearchParams(req.query).toString();
 
-  for (const base of pipedInstances) {
+  for (const base of UNIQUE_PIPED) {
     const targetUrl = `${base}${path}${query ? '?' + query : ''}`;
     try {
       const response = await fetch(targetUrl, {
