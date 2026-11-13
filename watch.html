@@ -2,18 +2,123 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Video Player - K-tube</title>
-  
-  <!-- CSSを外部ファイルに移動 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>K-tube Player</title>
   <link rel="stylesheet" href="css/watch.css">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 </head>
 <body>
+
 <div id="player-container">
-  <video id="video" controls playsinline></video>
+  <video id="video" playsinline crossOrigin="anonymous">
+    <!-- 字幕トラックは playwatch.js が動的に追加 -->
+  </video>
   <audio id="audio" style="display:none"></audio>
-  <div id="loading">読み込み中...</div>
-  <div id="error-message"></div>
+
+  <!-- 読み込み中 -->
+  <div id="loading" class="yt-loading">読み込み中...</div>
+  <!-- バッファリングスピナー -->
+  <div id="buffer-spinner" class="yt-spinner" style="display:none">
+    <div class="spinner"></div>
+  </div>
+  <!-- エラー表示 -->
+  <div id="error-message" class="yt-error" style="display:none"></div>
+
+  <!-- 中央の大きな再生ボタン -->
+  <button id="big-play-btn" class="yt-big-play">
+    <span class="material-icons">play_arrow</span>
+  </button>
+
+  <!-- ダブルタップインジケーター（中央） -->
+  <div id="double-tap-indicator" class="double-tap-indicator">
+    <span class="material-icons">fast_forward</span>
+    <span class="tap-text">10秒</span>
+  </div>
+
+  <!-- 2倍速インジケーター（上部） -->
+  <div id="speed-indicator" class="speed-indicator">
+    <span class="material-icons">double_arrow</span>
+    <span class="speed-text">2倍速</span>
+  </div>
+
+  <!-- 字幕オーバーレイ（<track>非対応ブラウザ用フォールバック） -->
+  <div id="subtitle-overlay" class="subtitle-overlay" style="display:none;"></div>
+
+  <!-- 下部コントロールバー -->
+  <div id="control-bar" class="yt-control-bar">
+    <div class="yt-progress-container" id="progress-container">
+      <div class="yt-progress-bg">
+        <div class="yt-progress-loaded" id="loaded-bar"></div>
+        <div class="yt-progress-played" id="played-bar"></div>
+        <div class="yt-progress-thumb" id="thumb"></div>
+      </div>
+    </div>
+
+    <div class="yt-controls-row">
+      <div class="yt-left-controls">
+        <button id="play-pause-btn" class="yt-ctrl-btn">
+          <span class="material-icons">play_arrow</span>
+        </button>
+        <button id="volume-btn" class="yt-ctrl-btn">
+          <span class="material-icons">volume_up</span>
+        </button>
+        <div class="yt-volume-slider-container">
+          <input type="range" id="volume-slider" class="yt-volume-slider" min="0" max="1" step="0.01" value="1">
+        </div>
+        <span class="yt-time" id="time-display">0:00 / 0:00</span>
+      </div>
+      <div class="yt-right-controls">
+        <!-- 字幕ボタン（新規追加） -->
+        <button id="subtitle-btn" class="yt-ctrl-btn" title="字幕">
+          <span class="material-icons">subtitles</span>
+        </button>
+        <button id="download-btn" class="yt-ctrl-btn" title="動画をダウンロード（新しいタブで開く）">
+          <span class="material-icons">download</span>
+        </button>
+        <button id="pip-btn" class="yt-ctrl-btn" title="ピクチャ・イン・ピクチャ">
+          <span class="material-icons">picture_in_picture_alt</span>
+        </button>
+        <button id="settings-btn" class="yt-ctrl-btn" title="設定">
+          <span class="material-icons">settings</span>
+        </button>
+        <button id="fullscreen-btn" class="yt-ctrl-btn" title="フルスクリーン">
+          <span class="material-icons">fullscreen</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 設定メニュー -->
+    <div id="settings-menu" class="settings-menu" style="display:none">
+      <div class="settings-item" data-action="speed">再生速度</div>
+      <div class="settings-item" data-action="subtitles">字幕</div>
+    </div>
+
+    <!-- 再生速度サブメニュー -->
+    <div id="speed-menu" class="settings-menu submenu" style="display:none">
+      <div class="settings-back" data-back="main">
+        <span class="material-icons">arrow_back</span> 再生速度
+      </div>
+      <div class="settings-item" data-speed="0.25">0.25x</div>
+      <div class="settings-item" data-speed="0.5">0.5x</div>
+      <div class="settings-item" data-speed="0.75">0.75x</div>
+      <div class="settings-item selected" data-speed="1">標準</div>
+      <div class="settings-item" data-speed="1.25">1.25x</div>
+      <div class="settings-item" data-speed="1.5">1.5x</div>
+      <div class="settings-item" data-speed="2">2x</div>
+    </div>
+
+    <!-- 字幕サブメニュー -->
+    <div id="subtitle-menu" class="settings-menu submenu" style="display:none">
+      <div class="settings-back" data-back="main">
+        <span class="material-icons">arrow_back</span> 字幕
+      </div>
+      <div class="settings-item" data-sub="off">オフ</div>
+      <div id="subtitle-list" class="subtitle-list"></div>
+      <!-- 自動翻訳 -->
+      <div class="settings-item" data-sub="translate">自動翻訳...</div>
+      <div id="translate-list" class="subtitle-list" style="display:none"></div>
+    </div>
+  </div>
 </div>
 
 <script src="js/playwatch.js"></script>
