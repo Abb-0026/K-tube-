@@ -526,7 +526,7 @@ function selectSubtitle(sub) {
   track.kind = 'subtitles';
   track.label = sub.label || sub.languageCode;
   track.srclang = sub.languageCode;
-  track.src = `/captions/${videoId}?label=${encodeURIComponent(sub.label || sub.languageCode)}`;
+  track.src = `/captions/${videoId}?label=${encodeURIComponent(sub.languageCode)}`;
   track.default = true;
   track.addEventListener('load', () => {
     track.track.mode = 'showing';
@@ -616,6 +616,14 @@ function selectTranslation(langCode, langName) {
   track.srclang = langCode;
   track.src = `/captions/${videoId}/translate?tlang=${langCode}`;
   track.default = true;
+
+  // 読み込み失敗時（501）はトースト表示
+  track.addEventListener('error', () => {
+    showModeToast('翻訳字幕は現在利用できません');
+    track.remove();
+    subtitleBtn.classList.remove('active');
+  });
+
   videoEl.appendChild(track);
   _currentTrack = track;
   subtitleBtn.classList.add('active');
