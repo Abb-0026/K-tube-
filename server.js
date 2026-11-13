@@ -11,10 +11,16 @@ const supabase = createClient(
   'sb_publishable_7H3Y61-DO70Z4SKU2Dvgrg_UST3d5iF'
 );
 
+import { execSync, exec } from "child_process";
+import { promisify } from "util";
+import fs from "fs/promises";
+import os from "os";
 
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const execAsync = promisify(exec);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -228,7 +234,214 @@ https://youtu.be/${videoId}`
   }
 });
 
+// ====================== 字幕取得（yt-dlp ベース） ======================
 
+// 字幕リスト取得
+app.get('/captions/:videoId', async (req, res) => {
+  const { videoId } = req.params;
+  const label = req.query.label;
+
+  // ── リスト取得 ──
+  if (!label) {
+    try {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ktube-subs-'));
+      const outTemplate = path.join(tmpDir, 'sub');
+
+      // --list-subs で利用可能な字幕を取得（ダウンロードはしない）
+      let listOutput = '';
+      try {
+        const { stdout } = await execAsync(
+          `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --list-subs "https://youtu.be/${videoId}"`,
+          { timeout: 20000, maxBuffer: 1024 * 1024 }
+        );
+        listOutput = stdout;
+      } catch (e) {
+        // --list-subs が失敗しても、字幕ダウンロードで判定できるので続行
+        console.warn('yt-dlp --list-subs failed:', e.message);
+      }
+
+      // --list-subs の出力から言語コードを抽出
+      // 例:
+      //   Available automatic captions for <id>:
+      //   Language    Name              Formats
+      //   ja          Japanese          vtt, ttml, srv3, srv2, srv1, json3
+      const langs = new Set();
+
+      if (listOutput) {
+        const lines = listOutput.split('\n');
+        let inSubs = false;
+        for (const line of lines) {
+          if (/Available (automatic )?subtitles/i.test(line)) { inSubs = true; continue; }
+          if (/^\[/.test(line)) { inSubs = false; continue; }
+          if (!inSubs) continue;
+
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          if (/^Language\s+Name/i.test(trimmed)) continue;
+
+          // 先頭トークンが言語コード
+          const m = trimmed.match(/^([a-zA-Z0-9\-_]+)\s+/);
+          if (m) langs.add(m[1]);
+        }
+      }
+
+      // --list-subs が取れなかった場合は、よく使う言語を総当たりで確認
+      if (langs.size === 0) {
+        const candidates = ['ja', 'en'];
+        for (const lang of candidates) {
+          try {
+            await execAsync(
+              `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --skip-download --write-subs --write-auto-subs --sub-lang ${lang} --sub-format vtt -o "${outTemplate}" "https://youtu.be/${videoId}"`,
+              { timeout: 25000, maxBuffer: 1024 * 1024 }
+            );
+            const files = await fs.readdir(tmpDir);
+            if (files.some(f => f.endsWith(`.${lang}.vtt`))) langs.add(lang);
+          } catch (e) {}
+        }
+      }
+
+      await fs.rm(tmpDir, { recursive: true, force: true });
+
+      const captions = [...langs].map(lang => ({
+        label: langLabel(lang),
+        languageCode: lang,
+        url: `${videoId}:${lang}`
+      }));
+
+      return res.json({ captions });
+    } catch (e) {
+      console.error('captions list failed:', e.message);
+      return res.status(500).json({ error: 'captions list failed', message: e.message });
+    }
+  }
+
+  // ── VTT 取得 ──
+  try {
+    // label は "ja" または "videoId:ja" 形式
+    const lang = label.includes(':') ? label.split(':').pop() : label;
+
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ktube-subs-'));
+    const outTemplate = path.join(tmpDir, 'sub');
+
+    try {
+      await execAsync(
+        `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --skip-download --write-subs --write-auto-subs --sub-lang ${lang} --sub-format vtt -o "${outTemplate}" "https://youtu.be/${videoId}"`,
+        { timeout: 30000, maxBuffer: 1024 * 1024 }
+      );
+    } catch (e) {
+      console.warn('yt-dlp subs download failed:', e.message);
+      await fs.rm(tmpDir, { recursive: true, force: true });
+      return res.status(500).send('caption vtt failed');
+    }
+
+    const files = await fs.readdir(tmpDir);
+    // 例: sub.ja.vtt / sub.ja-orig.vtt
+    const vttFile = files.find(f => f.endsWith(`.${lang}.vtt`)) ||
+                    files.find(f => f.includes(`.${lang}`) && f.endsWith('.vtt')) ||
+                    files.find(f => f.endsWith('.vtt'));
+
+    if (!vttFile) {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+      return res.status(404).send('no vtt file');
+    }
+
+    let vtt = await fs.readFile(path.join(tmpDir, vttFile), 'utf-8');
+    await fs.rm(tmpDir, { recursive: true, force: true });
+
+    // yt-dlp の VTT は先頭に "WEBVTT" ヘッダーがあるが、
+    // ない場合（auto-generated の特殊形式）は付与
+    if (!vtt.trimStart().startsWith('WEBVTT')) {
+      vtt = 'WEBVTT\n\n' + vtt;
+    }
+
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(vtt);
+  } catch (e) {
+    console.error('caption vtt failed:', e.message);
+    res.status(500).send('caption vtt failed');
+  }
+});
+
+// 翻訳先言語リスト（yt-dlp では翻訳字幕を直接取得できないため、固定リストを返す）
+app.get('/captions/:videoId/translate-langs', async (req, res) => {
+  const langs = [
+    { code: 'ja', name: '日本語' },
+    { code: 'en', name: 'English' },
+    { code: 'ko', name: '한국어' },
+    { code: 'zh-Hans', name: '简体中文' },
+    { code: 'zh-Hant', name: '繁體中文' },
+    { code: 'es', name: 'Español' },
+    { code: 'fr', name: 'Français' },
+    { code: 'de', name: 'Deutsch' },
+    { code: 'pt', name: 'Português' },
+    { code: 'ru', name: 'Русский' },
+    { code: 'ar', name: 'العربية' },
+    { code: 'hi', name: 'हिन्दी' },
+  ];
+  res.json({ langs });
+});
+
+// 翻訳字幕 VTT 取得
+// yt-dlp は YouTube の翻訳字幕を直接ダウンロードできないため、
+// 元の字幕（自動生成含む）を取得し、YouTube の timedtext に tlang を付けて取得する
+app.get('/captions/:videoId/translate', async (req, res) => {
+  const { videoId } = req.params;
+  const tlang = req.query.tlang;
+  if (!tlang) return res.status(400).send('tlang required');
+
+  try {
+    // まず元の字幕を yt-dlp で取得して baseUrl を得る代わりに、
+    // yt-dlp の --write-auto-subs で取得した VTT を翻訳するのは困難なので、
+    // YouTube の timedtext を yt-dlp の Cookie 付きで叩く
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ktube-tr-'));
+    const outTemplate = path.join(tmpDir, 'sub');
+
+    // 自動生成字幕（asr）をベースに取得
+    try {
+      await execAsync(
+        `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --skip-download --write-auto-subs --sub-lang ja,en --sub-format vtt -o "${outTemplate}" "https://youtu.be/${videoId}"`,
+        { timeout: 30000, maxBuffer: 1024 * 1024 }
+      );
+    } catch (e) {
+      console.warn('translate base subs failed:', e.message);
+    }
+
+    const files = await fs.readdir(tmpDir);
+    const baseFile = files.find(f => f.endsWith('.vtt'));
+    await fs.rm(tmpDir, { recursive: true, force: true });
+
+    if (!baseFile) {
+      return res.status(404).send('no base subtitles for translation');
+    }
+
+    // yt-dlp で取得した VTT をそのまま返す（翻訳は不可）
+    // 注: yt-dlp は YouTube の翻訳字幕エンドポイントを直接サポートしていないため、
+    // ここでは「元の字幕をそのまま返す」フォールバックとする
+    return res.status(501).json({
+      error: 'translation_not_supported',
+      message: 'yt-dlp ベースでは翻訳字幕は取得できません。元の字幕をご利用ください。'
+    });
+  } catch (e) {
+    console.error('translate failed:', e.message);
+    res.status(500).send('translate failed');
+  }
+});
+
+// 言語コード → 表示名
+function langLabel(code) {
+  const map = {
+    'ja': '日本語', 'en': 'English', 'ko': '한국어',
+    'zh-Hans': '简体中文', 'zh-Hant': '繁體中文',
+    'es': 'Español', 'fr': 'Français', 'de': 'Deutsch',
+    'pt': 'Português', 'ru': 'Русский', 'ar': 'العربية',
+    'hi': 'हिन्दी', 'it': 'Italiano', 'id': 'Bahasa Indonesia',
+    'th': 'ไทย', 'vi': 'Tiếng Việt', 'tr': 'Türkçe',
+    'ja-orig': '日本語（自動生成）', 'en-orig': 'English (auto)',
+  };
+  return map[code] || code;
+}
 
 // ====================== /api/v2/video（修正版） ======================
 const pipedInstances = [
