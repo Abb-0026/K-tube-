@@ -2,7 +2,7 @@ import express from "express";
 import fetch from "node-fetch";
 import { fileURLToPath } from "url";
 import path from "path";
-import { execSync } from "child_process";   
+
 
 import { createClient } from '@supabase/supabase-js';
 
