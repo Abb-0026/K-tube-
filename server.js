@@ -234,214 +234,183 @@ https://youtu.be/${videoId}`
   }
 });
 
-// ====================== 字幕取得（yt-dlp ベース） ======================
+// ====================== InnerTube ANDROID 字幕取得 ======================
 
-// 字幕リスト取得
-app.get('/captions/:videoId', async (req, res) => {
-  const { videoId } = req.params;
-  const label = req.query.label;
-
-  // ── リスト取得 ──
-  if (!label) {
-    try {
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ktube-subs-'));
-      const outTemplate = path.join(tmpDir, 'sub');
-
-      // --list-subs で利用可能な字幕を取得（ダウンロードはしない）
-      let listOutput = '';
-      try {
-        const { stdout } = await execAsync(
-          `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --list-subs "https://youtu.be/${videoId}"`,
-          { timeout: 20000, maxBuffer: 1024 * 1024 }
-        );
-        listOutput = stdout;
-      } catch (e) {
-        // --list-subs が失敗しても、字幕ダウンロードで判定できるので続行
-        console.warn('yt-dlp --list-subs failed:', e.message);
-      }
-
-      // --list-subs の出力から言語コードを抽出
-      // 例:
-      //   Available automatic captions for <id>:
-      //   Language    Name              Formats
-      //   ja          Japanese          vtt, ttml, srv3, srv2, srv1, json3
-      const langs = new Set();
-
-      if (listOutput) {
-        const lines = listOutput.split('\n');
-        let inSubs = false;
-        for (const line of lines) {
-          if (/Available (automatic )?subtitles/i.test(line)) { inSubs = true; continue; }
-          if (/^\[/.test(line)) { inSubs = false; continue; }
-          if (!inSubs) continue;
-
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          if (/^Language\s+Name/i.test(trimmed)) continue;
-
-          // 先頭トークンが言語コード
-          const m = trimmed.match(/^([a-zA-Z0-9\-_]+)\s+/);
-          if (m) langs.add(m[1]);
-        }
-      }
-
-      // --list-subs が取れなかった場合は、よく使う言語を総当たりで確認
-      if (langs.size === 0) {
-        const candidates = ['ja', 'en'];
-        for (const lang of candidates) {
-          try {
-            await execAsync(
-              `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --skip-download --write-subs --write-auto-subs --sub-lang ${lang} --sub-format vtt -o "${outTemplate}" "https://youtu.be/${videoId}"`,
-              { timeout: 25000, maxBuffer: 1024 * 1024 }
-            );
-            const files = await fs.readdir(tmpDir);
-            if (files.some(f => f.endsWith(`.${lang}.vtt`))) langs.add(lang);
-          } catch (e) {}
-        }
-      }
-
-      await fs.rm(tmpDir, { recursive: true, force: true });
-
-      const captions = [...langs].map(lang => ({
-        label: langLabel(lang),
-        languageCode: lang,
-        url: `${videoId}:${lang}`
-      }));
-
-      return res.json({ captions });
-    } catch (e) {
-      console.error('captions list failed:', e.message);
-      return res.status(500).json({ error: 'captions list failed', message: e.message });
-    }
-  }
-
-  // ── VTT 取得 ──
+// visitorData 取得（WEBクライアントの /youtubei/v1/next から）
+async function getVisitorData() {
   try {
-    // label は "ja" または "videoId:ja" 形式
-    const lang = label.includes(':') ? label.split(':').pop() : label;
-
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ktube-subs-'));
-    const outTemplate = path.join(tmpDir, 'sub');
-
-    try {
-      await execAsync(
-        `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --skip-download --write-subs --write-auto-subs --sub-lang ${lang} --sub-format vtt -o "${outTemplate}" "https://youtu.be/${videoId}"`,
-        { timeout: 30000, maxBuffer: 1024 * 1024 }
-      );
-    } catch (e) {
-      console.warn('yt-dlp subs download failed:', e.message);
-      await fs.rm(tmpDir, { recursive: true, force: true });
-      return res.status(500).send('caption vtt failed');
-    }
-
-    const files = await fs.readdir(tmpDir);
-    // 例: sub.ja.vtt / sub.ja-orig.vtt
-    const vttFile = files.find(f => f.endsWith(`.${lang}.vtt`)) ||
-                    files.find(f => f.includes(`.${lang}`) && f.endsWith('.vtt')) ||
-                    files.find(f => f.endsWith('.vtt'));
-
-    if (!vttFile) {
-      await fs.rm(tmpDir, { recursive: true, force: true });
-      return res.status(404).send('no vtt file');
-    }
-
-    let vtt = await fs.readFile(path.join(tmpDir, vttFile), 'utf-8');
-    await fs.rm(tmpDir, { recursive: true, force: true });
-
-    // yt-dlp の VTT は先頭に "WEBVTT" ヘッダーがあるが、
-    // ない場合（auto-generated の特殊形式）は付与
-    if (!vtt.trimStart().startsWith('WEBVTT')) {
-      vtt = 'WEBVTT\n\n' + vtt;
-    }
-
-    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.send(vtt);
+    const res = await fetch('https://www.youtube.com/youtubei/v1/next', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        context: { client: { clientName: 'WEB', clientVersion: '2.20260101.00.00' } }
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) throw new Error(`next ${res.status}`);
+    const data = await res.json();
+    return data?.responseContext?.visitorData || '';
   } catch (e) {
-    console.error('caption vtt failed:', e.message);
-    res.status(500).send('caption vtt failed');
+    console.warn('visitorData fetch failed:', e.message);
+    return '';
+  }
+}
+
+// ANDROID クライアントで captionTracks を取得
+async function fetchCaptionTracksAndroid(videoId) {
+  const visitorData = await getVisitorData();
+  if (!visitorData) {
+    console.warn('visitorData empty — LOGIN_REQUIRED になる可能性');
+  }
+
+  // 検索結果で実績のある clientVersion [citation:5]
+  const clientVersion = '18.11.34';
+  const userAgent = `com.google.android.youtube/${clientVersion} (Linux; U; Android 11) gzip`;
+
+  const body = {
+    context: {
+      client: {
+        clientName: 'ANDROID',
+        clientVersion: clientVersion,
+        androidSdkVersion: 30,
+        hl: 'ja',
+        gl: 'JP',
+        visitorData: visitorData || undefined
+      }
+    },
+    videoId
+  };
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'User-Agent': userAgent,
+    'X-YouTube-Client-Name': '3',
+    'X-YouTube-Client-Version': clientVersion,
+    'Origin': 'https://www.youtube.com'
+  };
+  if (visitorData) {
+    headers['X-Goog-Visitor-Id'] = visitorData;
+  }
+
+  const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10000)
+  });
+
+  if (!res.ok) throw new Error(`player ${res.status}`);
+  const data = await res.json();
+
+  const status = data?.playabilityStatus?.status;
+  if (status !== 'OK') {
+    throw new Error(`playability: ${status} — ${data?.playabilityStatus?.reason || ''}`);
+  }
+
+  const renderer = data?.captions?.playerCaptionsTracklistRenderer;
+  return {
+    captionTracks: renderer?.captionTracks || [],
+    translationLanguages: renderer?.translationLanguages || []
+  };
+}
+
+// ルート定義（順序が重要：具体的なものを先に）
+
+// 翻訳先言語リスト
+app.get('/captions/:videoId/translate-langs', async (req, res) => {
+  const { videoId } = req.params;
+  try {
+    const { translationLanguages } = await fetchCaptionTracksAndroid(videoId);
+    const langs = translationLanguages.map(l => ({
+      code: l.languageCode,
+      name: l.languageName?.simpleText || l.languageName?.runs?.[0]?.text || l.languageCode
+    }));
+    res.json({ langs });
+  } catch (e) {
+    console.error('translate-langs failed:', e.message);
+    res.status(500).json({ error: 'translate-langs failed' });
   }
 });
 
-// 翻訳先言語リスト（yt-dlp では翻訳字幕を直接取得できないため、固定リストを返す）
-app.get('/captions/:videoId/translate-langs', async (req, res) => {
-  const langs = [
-    { code: 'ja', name: '日本語' },
-    { code: 'en', name: 'English' },
-    { code: 'ko', name: '한국어' },
-    { code: 'zh-Hans', name: '简体中文' },
-    { code: 'zh-Hant', name: '繁體中文' },
-    { code: 'es', name: 'Español' },
-    { code: 'fr', name: 'Français' },
-    { code: 'de', name: 'Deutsch' },
-    { code: 'pt', name: 'Português' },
-    { code: 'ru', name: 'Русский' },
-    { code: 'ar', name: 'العربية' },
-    { code: 'hi', name: 'हिन्दी' },
-  ];
-  res.json({ langs });
-});
-
-// 翻訳字幕 VTT 取得
-// yt-dlp は YouTube の翻訳字幕を直接ダウンロードできないため、
-// 元の字幕（自動生成含む）を取得し、YouTube の timedtext に tlang を付けて取得する
+// 翻訳字幕 VTT
 app.get('/captions/:videoId/translate', async (req, res) => {
   const { videoId } = req.params;
   const tlang = req.query.tlang;
   if (!tlang) return res.status(400).send('tlang required');
 
   try {
-    // まず元の字幕を yt-dlp で取得して baseUrl を得る代わりに、
-    // yt-dlp の --write-auto-subs で取得した VTT を翻訳するのは困難なので、
-    // YouTube の timedtext を yt-dlp の Cookie 付きで叩く
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ktube-tr-'));
-    const outTemplate = path.join(tmpDir, 'sub');
+    const { captionTracks } = await fetchCaptionTracksAndroid(videoId);
+    if (captionTracks.length === 0) throw new Error('no tracks');
 
-    // 自動生成字幕（asr）をベースに取得
-    try {
-      await execAsync(
-        `yt-dlp --cookies youtube-cookies.txt --js-runtimes node --remote-components ejs:github --skip-download --write-auto-subs --sub-lang ja,en --sub-format vtt -o "${outTemplate}" "https://youtu.be/${videoId}"`,
-        { timeout: 30000, maxBuffer: 1024 * 1024 }
-      );
-    } catch (e) {
-      console.warn('translate base subs failed:', e.message);
-    }
+    const base = captionTracks.find(t => t.kind === 'asr') || captionTracks[0];
+    const clientVersion = '18.11.34';
+    const userAgent = `com.google.android.youtube/${clientVersion} (Linux; U; Android 11) gzip`;
 
-    const files = await fs.readdir(tmpDir);
-    const baseFile = files.find(f => f.endsWith('.vtt'));
-    await fs.rm(tmpDir, { recursive: true, force: true });
-
-    if (!baseFile) {
-      return res.status(404).send('no base subtitles for translation');
-    }
-
-    // yt-dlp で取得した VTT をそのまま返す（翻訳は不可）
-    // 注: yt-dlp は YouTube の翻訳字幕エンドポイントを直接サポートしていないため、
-    // ここでは「元の字幕をそのまま返す」フォールバックとする
-    return res.status(501).json({
-      error: 'translation_not_supported',
-      message: 'yt-dlp ベースでは翻訳字幕は取得できません。元の字幕をご利用ください。'
+    // ANDROID 経由の baseUrl は XML を返す。fmt=vtt を付けると VTT になる [citation:2]
+    const vttUrl = base.baseUrl + `&tlang=${encodeURIComponent(tlang)}&fmt=vtt`;
+    const vttRes = await fetch(vttUrl, {
+      headers: { 'User-Agent': userAgent },
+      signal: AbortSignal.timeout(8000)
     });
+    if (!vttRes.ok) throw new Error(`translate vtt ${vttRes.status}`);
+    const vtt = await vttRes.text();
+    if (!vtt || vtt.length < 20) throw new Error('empty translate vtt');
+
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(vtt);
   } catch (e) {
     console.error('translate failed:', e.message);
     res.status(500).send('translate failed');
   }
 });
 
-// 言語コード → 表示名
-function langLabel(code) {
-  const map = {
-    'ja': '日本語', 'en': 'English', 'ko': '한국어',
-    'zh-Hans': '简体中文', 'zh-Hant': '繁體中文',
-    'es': 'Español', 'fr': 'Français', 'de': 'Deutsch',
-    'pt': 'Português', 'ru': 'Русский', 'ar': 'العربية',
-    'hi': 'हिन्दी', 'it': 'Italiano', 'id': 'Bahasa Indonesia',
-    'th': 'ไทย', 'vi': 'Tiếng Việt', 'tr': 'Türkçe',
-    'ja-orig': '日本語（自動生成）', 'en-orig': 'English (auto)',
-  };
-  return map[code] || code;
-}
+// 字幕リスト＆VTT取得（最後に定義）
+app.get('/captions/:videoId', async (req, res) => {
+  const { videoId } = req.params;
+  const label = req.query.label;
+
+  try {
+    const { captionTracks } = await fetchCaptionTracksAndroid(videoId);
+
+    // リスト返却
+    if (!label) {
+      const captions = captionTracks.map(t => ({
+        label: t.name?.simpleText || t.name?.runs?.[0]?.text || t.languageCode,
+        languageCode: t.languageCode,
+        url: t.baseUrl,
+        isAutoGenerated: t.kind === 'asr'
+      }));
+      return res.json({ captions });
+    }
+
+    // VTT 取得
+    const track = captionTracks.find(t =>
+      (t.name?.simpleText || t.name?.runs?.[0]?.text) === label ||
+      t.languageCode === label
+    );
+    if (!track) return res.status(404).send('track not found');
+
+    const clientVersion = '18.11.34';
+    const userAgent = `com.google.android.youtube/${clientVersion} (Linux; U; Android 11) gzip`;
+
+    const vttUrl = track.baseUrl + '&fmt=vtt';
+    const vttRes = await fetch(vttUrl, {
+      headers: { 'User-Agent': userAgent },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!vttRes.ok) throw new Error(`vtt ${vttRes.status}`);
+    const vtt = await vttRes.text();
+    if (!vtt || vtt.length < 20) throw new Error('empty vtt');
+
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(vtt);
+  } catch (e) {
+    console.error('captions failed:', e.message);
+    res.status(500).json({ error: 'captions failed', message: e.message });
+  }
+});
 
 // ====================== /api/v2/video（修正版） ======================
 const pipedInstances = [
