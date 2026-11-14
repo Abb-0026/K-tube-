@@ -526,7 +526,8 @@ function selectSubtitle(sub) {
   track.kind = 'subtitles';
   track.label = sub.label || sub.languageCode;
   track.srclang = sub.languageCode;
-  track.src = `/captions/${videoId}?label=${encodeURIComponent(sub.languageCode)}`;
+  // playwatch.js の selectSubtitle 内
+track.src = `/captions/${videoId}?label=${encodeURIComponent(sub.languageCode)}`;
   track.default = true;
   track.addEventListener('load', () => {
     track.track.mode = 'showing';
